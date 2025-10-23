@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { User, Venue, Match, Message, Like, CheckIn } from '@/types';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rhgpswjsphnkrkvibvsx.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoZ3Bzd2pzcGhua3JrdmlidnN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMTY2OTEsImV4cCI6MjA3Njc5MjY5MX0.xl-BKaYIfIq1HyE2koON9yUJrD5jR-wi72lYmeGTjUU';
 
 // Client für Server-side und API Routes
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
