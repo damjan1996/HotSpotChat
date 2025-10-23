@@ -9,9 +9,19 @@ import { Card } from '@/components/ui/Card';
 export default function HomePage() {
   const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
+  const [animationPositions, setAnimationPositions] = useState<Array<{left: number, top: number, delay: number, duration: number}>>([]);
 
   useEffect(() => {
     setIsVisible(true);
+    // Generate animation positions only on client side
+    const positions = [...Array(30)].map(() => ({
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      delay: Math.random() * 3,
+      duration: 3 + Math.random() * 4
+    }));
+    setAnimationPositions(positions);
+
     // Check if user is already authenticated
     const isAuthenticated = localStorage.getItem('authenticated');
     if (isAuthenticated) {
@@ -24,15 +34,15 @@ export default function HomePage() {
       {/* Animated Background */}
       <div className="fixed inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-100/40 via-white to-purple-100/40" />
-        {[...Array(30)].map((_, i) => (
+        {animationPositions.map((position, i) => (
           <div
             key={i}
             className="absolute w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full animate-pulse opacity-20"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${3 + Math.random() * 4}s`,
+              left: `${position.left}%`,
+              top: `${position.top}%`,
+              animationDelay: `${position.delay}s`,
+              animationDuration: `${position.duration}s`,
             }}
           />
         ))}

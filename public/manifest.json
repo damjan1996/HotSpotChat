@@ -1,0 +1,30 @@
+{
+  "name": "HotSpotChat",
+  "short_name": "HotSpot",
+  "description": "Pronađi stvarne veze na stvarnim mestima",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#3B82F6",
+  "background_color": "#F8FAFC",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "sr-RS",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["social", "lifestyle"],
+  "dir": "ltr",
+  "display_override": ["window-controls-overlay"],
+  "prefer_related_applications": false
+}
