@@ -55,7 +55,7 @@ export class SupabaseStorageService {
       const timestamp = Date.now();
       const fileExt = file.name.split('.').pop();
       const finalFileName = fileName || `${userId}_${timestamp}.${fileExt}`;
-      const filePath = `${userId}/${finalFileName}`;
+      const filePath = finalFileName;
 
       // Upload file to storage
       const { data, error } = await supabase.storage
