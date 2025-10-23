@@ -26,7 +26,8 @@
       "Bash(wc:*)",
       "Bash(pnpm build:*)",
       "Bash(npx next:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(git rm:*)"
     ],
     "deny": []
   }
