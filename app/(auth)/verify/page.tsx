@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Shield, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { supabaseAuth } from '@/lib/auth/supabase-auth';
+import { supabaseDatabaseService } from '@/lib/services/supabase-database';
 
 export default function VerifyPage() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -80,22 +82,61 @@ export default function VerifyPage() {
     setIsLoading(true);
 
     try {
-      // TODO: Implement actual OTP verification via Supabase Auth
-      // For demo purposes, accept any 6-digit code
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Verify OTP with Supabase
+      const verifyResponse = await supabaseAuth.verifyOTP(phone, code);
       
-      if (code === '123456' || code.length === 6) {
-        // Clear stored phone number
-        localStorage.removeItem('pending_phone');
-        
-        // Set as authenticated (in real app, this would be handled by Supabase Auth)
-        localStorage.setItem('authenticated', 'true');
-        
-        // Redirect to dashboard
-        router.push('/dashboard');
-      } else {
-        throw new Error('Nevaljan kod za verifikaciju');
+      if (!verifyResponse.success) {
+        throw new Error(verifyResponse.error || 'Nevaljan kod za verifikaciju');
       }
+
+      // Get registration data from localStorage
+      const registrationDataStr = localStorage.getItem('registrationData');
+      if (!registrationDataStr) {
+        throw new Error('Podaci za registraciju nisu pronađeni');
+      }
+
+      const registrationData = JSON.parse(registrationDataStr);
+      const userId = verifyResponse.userId;
+
+      if (!userId) {
+        throw new Error('Greška pri kreiranju korisničkog naloga');
+      }
+
+      // Create user profile in database with all data including photos
+      const profileData = {
+        id: userId,
+        name: registrationData.name,
+        phone: registrationData.phone,
+        age: registrationData.age,
+        gender: registrationData.gender,
+        bio: registrationData.bio || '',
+        photos: registrationData.photos || [],
+        is_online: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        email: undefined,
+        image: undefined,
+        location: undefined,
+        interests: undefined
+      };
+
+      const updateResult = await supabaseDatabaseService.createUserProfile(profileData);
+      
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || 'Greška pri čuvanju profila');
+      }
+
+      // Clear stored data
+      localStorage.removeItem('pending_phone');
+      localStorage.removeItem('registrationData');
+      
+      // Set as authenticated
+      localStorage.setItem('authenticated', 'true');
+      localStorage.setItem('userId', userId);
+      
+      // Redirect to main chat page
+      router.push('/chat');
+      
     } catch (err: any) {
       setError(err.message || 'Verifikacija neuspešna');
       // Clear OTP on error
@@ -239,7 +280,10 @@ export default function VerifyPage() {
         {/* Demo Notice */}
         <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-blue-700 text-xs text-center">
-            <strong>Demo:</strong> Koristi bilo koji 6-cifreni kod
+            <strong>Demo Modus:</strong> Verwende den Code <strong>123456</strong> für die Verifikation
+          </p>
+          <p className="text-blue-600 text-xs text-center mt-1">
+            SMS-Provider ist für die Entwicklung deaktiviert
           </p>
         </div>
       </div>

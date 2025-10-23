@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { Providers } from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -30,9 +31,11 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="format-detection" content="telephone=no" />
       </head>
-      <body className={`${inter.className} h-full bg-gradient-to-br from-primary-50 to-secondary-100 antialiased`}>
-        <div id="root" className="h-full">
-          {children}
+      <body className={`${inter.className} h-full bg-white antialiased`}>
+        <div className="w-full h-full bg-white">
+          <Providers>
+            {children}
+          </Providers>
         </div>
       </body>
     </html>

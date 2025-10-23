@@ -11,6 +11,7 @@ export interface User {
   last_seen?: string;
   created_at: string;
   updated_at?: string;
+  interests?: string[];
 }
 
 export interface Venue {

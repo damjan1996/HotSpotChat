@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Heart, Grid, MessageCircle, User, Search } from 'lucide-react';
+import { Heart, Grid, MessageCircle, User, Search, MapPin } from 'lucide-react';
 
 interface BottomNavigationProps {
   className?: string;
@@ -10,31 +10,40 @@ interface BottomNavigationProps {
 
 const navigationItems = [
   { 
-    id: 'discover-swipe', 
-    label: 'Upoznavanje', 
-    icon: Heart, 
+    id: 'discover', 
+    label: 'Discover', 
+    icon: MapPin, 
     href: '/discover',
-    params: '?mode=swipe'
+    color: 'text-red-500'
   },
   { 
-    id: 'discover-list', 
-    label: 'Lista', 
+    id: 'order', 
+    label: 'Order', 
     icon: Grid, 
-    href: '/discover',
-    params: '?mode=list'
+    href: '/order',
+    color: 'text-gray-500'
   },
   { 
-    id: 'chat', 
+    id: 'likes', 
+    label: 'Likes', 
+    icon: Heart, 
+    href: '/likes',
+    color: 'text-gray-500'
+  },
+  { 
+    id: 'chats', 
     label: 'Chats', 
     icon: MessageCircle, 
     href: '/chat',
+    color: 'text-gray-500',
     badge: 3
   },
   { 
     id: 'profile', 
-    label: 'Profil', 
+    label: 'Profile', 
     icon: User, 
-    href: '/profile'
+    href: '/profile',
+    color: 'text-gray-500'
   }
 ];
 
@@ -52,46 +61,21 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ className = 
     }
   }, [pathname]);
 
-  const handleNavigation = (href: string, params?: string) => {
-    console.log('Navigation clicked:', href, params);
-    
-    if (href === '/discover' && params) {
-      // For discover page, build URL string for Next.js 14
-      const urlParams = new URLSearchParams(params);
-      const mode = urlParams.get('mode') || 'swipe';
-      
-      console.log('Navigating to mode:', mode);
-      
-      // Use string URL format for Next.js 14 App Router
-      const fullPath = `/discover?mode=${mode}`;
-      router.push(fullPath);
-      
-      // Update local state immediately
-      setCurrentMode(mode);
-    } else {
-      // For other pages, use simple navigation
-      const fullPath = params ? `${href}${params}` : href;
-      router.push(fullPath);
-    }
+  const handleNavigation = (href: string) => {
+    console.log('Navigation clicked:', href);
+    router.push(href);
   };
 
   const isActive = (item: typeof navigationItems[0]) => {
-    if (item.href === '/discover') {
-      if (pathname === '/discover') {
-        return (item.id === 'discover-swipe' && currentMode === 'swipe') || 
-               (item.id === 'discover-list' && currentMode === 'list');
-      }
-      return false;
-    }
     return pathname.startsWith(item.href);
   };
 
   return (
     <div 
-      className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-bottom ${className}`}
+      className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-300 safe-area-bottom ${className}`}
       style={{ zIndex: 999 }}
     >
-      <nav className="flex items-center justify-around py-2 px-4 max-w-md mx-auto">
+      <nav className="flex items-center justify-around py-3 px-4">
         {navigationItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item);
@@ -99,23 +83,19 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ className = 
           return (
             <button
               key={item.id}
-              onClick={() => handleNavigation(item.href, item.params)}
-              className={`flex flex-col items-center justify-center min-w-0 flex-1 py-2 px-1 transition-colors ${
-                active 
-                  ? 'text-pink-600' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              onClick={() => handleNavigation(item.href)}
+              className="flex flex-col items-center justify-center min-w-0 flex-1 py-1 px-1 transition-colors"
             >
               <div className="relative">
-                <Icon className={`w-6 h-6 mb-1 ${active ? 'text-pink-600' : 'text-gray-500'}`} />
+                <Icon className={`w-6 h-6 mb-1 ${active ? item.color : 'text-gray-400'}`} />
                 {item.badge && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 text-white text-xs rounded-full flex items-center justify-center">
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                     {item.badge}
                   </div>
                 )}
               </div>
               <span className={`text-xs font-medium truncate ${
-                active ? 'text-pink-600' : 'text-gray-500'
+                active ? item.color : 'text-gray-400'
               }`}>
                 {item.label}
               </span>

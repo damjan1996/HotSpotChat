@@ -7,7 +7,26 @@
       "Bash(curl:*)",
       "Bash(npm run build:*)",
       "Bash(npm run type-check:*)",
-      "Bash(pnpm run:*)"
+      "Bash(pnpm run:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm add:*)",
+      "Bash(dir input)",
+      "Bash(copy:*)",
+      "Bash(cp:*)",
+      "Bash(touch:*)",
+      "Bash(pnpm approve-builds:*)",
+      "Bash(pnpm dlx:*)",
+      "Bash(npx prisma:*)",
+      "Bash(pnpm tsx:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(rm:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(wc:*)",
+      "Bash(pnpm build:*)",
+      "Bash(npx next:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": []
   }

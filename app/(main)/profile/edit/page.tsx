@@ -1,25 +1,58 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, User, Edit, Save, X, Plus, Trash2 } from 'lucide-react';
+import { Camera, User, Edit, Save, X, Plus, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
+import { PhotoUpload } from '@/components/profile/PhotoUpload';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { supabaseDatabaseService, type UserProfile } from '@/lib/services/supabase-database';
 
 export default function EditProfilePage() {
-  const [name, setName] = useState('Marko');
-  const [age, setAge] = useState('25');
-  const [bio, setBio] = useState('Volim muziku, ples i upoznavanje novih ljudi! 🎵✨');
-  const [photos, setPhotos] = useState([
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
-    'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400'
-  ]);
+  const [name, setName] = useState('');
+  const [age, setAge] = useState('');
+  const [bio, setBio] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'other'>('other');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      loadUserProfile();
+    } else if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  const loadUserProfile = async () => {
+    if (!user) return;
+
+    try {
+      const result = await supabaseDatabaseService.getUserById(user.id);
+      if (result.success && result.user) {
+        const profile = result.user;
+        setUserProfile(profile);
+        setName(profile.name || '');
+        setAge(profile.age?.toString() || '');
+        setBio(profile.bio || '');
+        setGender(profile.gender || 'other');
+        setPhotos(profile.photos || []);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+      setError('Greška pri učitavanju profila');
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     setError('');
@@ -37,15 +70,30 @@ export default function EditProfilePage() {
       if (photos.length === 0) {
         throw new Error('Morate imati najmanje jednu fotografiju');
       }
+      if (!user) {
+        throw new Error('Korisnik nije autentifikovan');
+      }
 
-      // TODO: Implement actual profile update via API
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Update profile in database
+      const updateData: Partial<UserProfile> = {
+        name: name.trim(),
+        age: parseInt(age),
+        bio: bio.trim(),
+        gender,
+        photos
+      };
+
+      const result = await supabaseDatabaseService.updateUserProfile(user.id, updateData);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Greška pri ažuriranju profila');
+      }
       
       setSuccess('Profil je uspešno ažuriran!');
       
-      // Redirect after success
+      // Force refresh the profile page by using window.location
       setTimeout(() => {
-        router.push('/profile');
+        window.location.href = '/profile';
       }, 2000);
     } catch (err: any) {
       setError(err.message || 'Greška pri ažuriranju profila');
@@ -54,32 +102,20 @@ export default function EditProfilePage() {
     }
   };
 
-  const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      
-      // Create preview URL (in real app, upload to server)
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result && photos.length < 6) {
-          setPhotos(prev => [...prev, e.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  if (authLoading || dataLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Učitavanje profila...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const movePhoto = (fromIndex: number, toIndex: number) => {
-    const newPhotos = [...photos];
-    const [moved] = newPhotos.splice(fromIndex, 1);
-    newPhotos.splice(toIndex, 0, moved);
-    setPhotos(newPhotos);
-  };
+  if (!user) {
+    return null; // Will redirect in useEffect
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -106,77 +142,12 @@ export default function EditProfilePage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Photos Section */}
           <Card className="p-6">
-            <div className="flex items-center mb-4">
-              <Camera className="w-5 h-5 text-gray-600 mr-2" />
-              <h2 className="text-lg font-semibold text-gray-900">Fotografije</h2>
-              <span className="ml-2 text-sm text-gray-500">({photos.length}/6)</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {photos.map((photo, index) => (
-                <div key={index} className="relative group">
-                  <div 
-                    className="aspect-square bg-cover bg-center rounded-lg border-2 border-gray-200"
-                    style={{ backgroundImage: `url(${photo})` }}
-                  >
-                    {index === 0 && (
-                      <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
-                        Glavna
-                      </div>
-                    )}
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => removePhoto(index)}
-                        className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                    
-                    {/* Move buttons */}
-                    {index > 0 && (
-                      <button
-                        onClick={() => movePhoto(index, index - 1)}
-                        className="absolute bottom-2 left-2 w-6 h-6 bg-black/50 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        ←
-                      </button>
-                    )}
-                    {index < photos.length - 1 && (
-                      <button
-                        onClick={() => movePhoto(index, index + 1)}
-                        className="absolute bottom-2 right-2 w-6 h-6 bg-black/50 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        →
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              
-              {/* Add Photo Button */}
-              {photos.length < 6 && (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-gray-400 transition-colors"
-                >
-                  <Plus className="w-8 h-8 text-gray-400 mb-2" />
-                  <span className="text-sm text-gray-500">Dodaj foto</span>
-                </button>
-              )}
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoUpload}
-              className="hidden"
+            <PhotoUpload
+              userId={user.id}
+              currentPhotos={photos}
+              onPhotosUpdated={setPhotos}
+              maxPhotos={6}
             />
-
-            <p className="text-xs text-gray-500">
-              Prva fotografija će biti glavna na vašem profilu. Možete imati do 6 fotografija.
-            </p>
           </Card>
 
           {/* Profile Info Section */}
@@ -213,6 +184,21 @@ export default function EditProfilePage() {
                   min="18"
                   max="100"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Pol
+                </label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as 'male' | 'female' | 'other')}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="male">Muški</option>
+                  <option value="female">Ženski</option>
+                  <option value="other">Ostalo</option>
+                </select>
               </div>
 
               <div>

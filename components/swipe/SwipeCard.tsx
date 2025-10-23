@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, useAnimation, PanInfo } from 'framer-motion';
 import { Heart, X, MapPin, Clock } from 'lucide-react';
 import type { User } from '@/types';
@@ -9,18 +9,71 @@ interface SwipeCardProps {
   user: User;
   onSwipe: (direction: 'left' | 'right', user: User) => void;
   onCardClick?: (user: User) => void;
+  onLike?: () => void;
+  onPass?: () => void;
 }
 
 export const SwipeCard: React.FC<SwipeCardProps> = ({
   user,
   onSwipe,
-  onCardClick
+  onCardClick,
+  onLike,
+  onPass
 }) => {
   const [exitX, setExitX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragX, setDragX] = useState(0);
+  const [isMounted, setIsMounted] = useState(false);
+  const [pendingAnimation, setPendingAnimation] = useState<{type: 'exit' | 'reset', params: any} | null>(null);
   const controls = useAnimation();
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Helper function to safely execute animations
+  const safeAnimationStart = (params: any, onComplete?: () => void) => {
+    if (!isMounted || !controls) {
+      setPendingAnimation({ 
+        type: onComplete ? 'exit' : 'reset', 
+        params: onComplete ? { ...params, onComplete } : params 
+      });
+      return;
+    }
+
+    try {
+      const animationPromise = controls.start(params);
+      if (onComplete && animationPromise) {
+        animationPromise.then(onComplete).catch(console.error);
+      }
+      return animationPromise;
+    } catch (error) {
+      console.error('Animation error:', error);
+      if (onComplete) onComplete();
+    }
+  };
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Execute pending animations after mount
+  useEffect(() => {
+    if (isMounted && pendingAnimation && controls) {
+      // Small delay to ensure controls are fully initialized
+      const timeoutId = setTimeout(() => {
+        if (pendingAnimation.type === 'exit') {
+          controls.start(pendingAnimation.params).then(() => {
+            if (pendingAnimation.params.onComplete) {
+              pendingAnimation.params.onComplete();
+            }
+          }).catch(console.error);
+        } else if (pendingAnimation.type === 'reset') {
+          controls.start(pendingAnimation.params).catch(console.error);
+        }
+        setPendingAnimation(null);
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isMounted, pendingAnimation, controls]);
 
   const handleDragStart = () => {
     console.log('Drag started for:', user.name);
@@ -43,48 +96,67 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       const direction = offset > 0 ? 'right' : 'left';
       setExitX(direction === 'right' ? 1000 : -1000);
       
-      // Animate out instantly
-      controls.start({
-        x: direction === 'right' ? 1000 : -1000,
-        rotate: direction === 'right' ? 15 : -15,
+      const animationParams = {
+        x: direction === 'right' ? 400 : -400,
+        rotate: direction === 'right' ? 10 : -10,
         opacity: 0,
-        transition: { type: 'spring', stiffness: 800, damping: 40, duration: 0.15 }
-      }).then(() => {
-        onSwipe(direction, user);
-      });
+        transition: { type: 'spring', stiffness: 500, damping: 30, duration: 0.25 }
+      };
+
+      safeAnimationStart(animationParams, () => onSwipe(direction, user));
     } else {
       // Snap back to center
       setDragX(0);
-      controls.start({
+      const resetParams = {
         x: 0,
         rotate: 0,
         transition: { type: 'spring', stiffness: 400, damping: 40 }
-      });
+      };
+
+      safeAnimationStart(resetParams);
     }
   };
 
   const handleLike = () => {
-    setExitX(1000);
-    controls.start({
-      x: 1000,
-      rotate: 15,
-      opacity: 0,
-      transition: { type: 'spring', stiffness: 800, damping: 40, duration: 0.15 }
-    }).then(() => {
-      onSwipe('right', user);
-    });
+    console.log('SwipeCard handleLike called');
+    if (onLike) {
+      onLike();
+    } else {
+      // Fallback to old behavior
+      setExitX(400);
+      const animationParams = {
+        x: 400,
+        rotate: 10,
+        opacity: 0,
+        transition: { type: 'spring', stiffness: 500, damping: 30, duration: 0.25 }
+      };
+
+      safeAnimationStart(animationParams, () => {
+        console.log('SwipeCard animation complete, calling onSwipe');
+        onSwipe('right', user);
+      });
+    }
   };
 
   const handlePass = () => {
-    setExitX(-1000);
-    controls.start({
-      x: -1000,
-      rotate: -15,
-      opacity: 0,
-      transition: { type: 'spring', stiffness: 800, damping: 40, duration: 0.15 }
-    }).then(() => {
-      onSwipe('left', user);
-    });
+    console.log('SwipeCard handlePass called');
+    if (onPass) {
+      onPass();
+    } else {
+      // Fallback to old behavior
+      setExitX(-400);
+      const animationParams = {
+        x: -400,
+        rotate: -10,
+        opacity: 0,
+        transition: { type: 'spring', stiffness: 500, damping: 30, duration: 0.25 }
+      };
+
+      safeAnimationStart(animationParams, () => {
+        console.log('SwipeCard animation complete, calling onSwipe');
+        onSwipe('left', user);
+      });
+    }
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -112,7 +184,6 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       onDragEnd={handleDragEnd}
       animate={controls}
       whileDrag={{
-        scale: 1.05,
         cursor: 'grabbing',
         rotate: dragX * 0.1,
         transition: { duration: 0 }
@@ -124,7 +195,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     >
       {/* Background Image */}
       <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat rounded-2xl"
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{ 
           backgroundImage: `url(${primaryPhoto})`,
           filter: 'brightness(0.9)'
@@ -132,93 +203,57 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       />
 
       {/* Gradient Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent rounded-2xl" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
-      {/* Like Indicator */}
-      <motion.div
-        className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-green-500 rounded-full flex items-center justify-center shadow-2xl"
-        initial={{ opacity: 0, scale: 0.5 }}
-        animate={{
-          opacity: isDragging && dragX > 0 ? dragOpacity(dragX) : 0,
-          scale: isDragging && dragX > 0 ? 1 : 0.5
-        }}
-      >
-        <Heart className="w-10 h-10 text-white fill-current" />
-      </motion.div>
-
-      {/* Pass Indicator */}
-      <motion.div
-        className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-red-500 rounded-full flex items-center justify-center shadow-2xl"
-        initial={{ opacity: 0, scale: 0.5 }}
-        animate={{
-          opacity: isDragging && dragX < 0 ? dragOpacity(dragX) : 0,
-          scale: isDragging && dragX < 0 ? 1 : 0.5
-        }}
-      >
-        <X className="w-10 h-10 text-white" />
-      </motion.div>
 
       {/* Online Status Indicator */}
       {user.is_online && (
         <div className="online-indicator" />
       )}
 
-      {/* Card Content */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold mb-1">
-            {user.name}, {user.age}
-          </h2>
-          
-          {user.bio && (
-            <p className="text-sm text-white/80 mb-2 line-clamp-2">
-              {user.bio}
-            </p>
-          )}
-          
-          <div className="flex items-center text-sm text-white/70 mb-4">
-            <MapPin className="w-4 h-4 mr-1" />
-            <span>U lokalu</span>
-          </div>
-          
-          {/* Action Buttons on Card */}
-          <div className="flex items-center justify-center space-x-6 mt-4">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePass();
-              }}
-              className="w-14 h-14 bg-white/20 backdrop-blur-sm border-2 border-white/30 rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200"
-            >
-              <X className="w-7 h-7 text-white" />
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLike();
-              }}
-              className="w-16 h-16 bg-pink-500/80 backdrop-blur-sm border-2 border-white/30 rounded-full flex items-center justify-center hover:bg-pink-500 transition-all duration-200"
-            >
-              <Heart className="w-8 h-8 text-white fill-current" />
-            </button>
-          </div>
-        </div>
+      {/* Profile Progress Bar */}
+      <div className="absolute top-4 left-4 right-4 h-1 bg-gray-400/30 rounded-full">
+        <div className="h-full bg-white rounded-full" style={{ width: '60%' }} />
       </div>
 
-      {/* Photo Indicators */}
-      {user.photos && user.photos.length > 1 && (
-        <div className="absolute top-4 left-4 right-4 flex space-x-1">
-          {user.photos.map((_, index) => (
-            <div
-              key={index}
-              className={`flex-1 h-1 rounded-full ${
-                index === 0 ? 'bg-white' : 'bg-white/30'
-              }`}
-            />
-          ))}
-        </div>
-      )}
+      {/* Profile Info Top */}
+      <div className="absolute top-8 left-4 right-4 text-white">
+        <h2 className="text-3xl font-bold">
+          {user.name} {user.age}
+        </h2>
+        <p className="text-sm text-white/80 mt-1">
+          Last seen 2 day ago
+        </p>
+      </div>
+
+      {/* Interest Tags */}
+      <div className="absolute bottom-56 left-4 right-4">
+        {user.interests && user.interests.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {user.interests.slice(0, 3).map((interest, index) => (
+              <span key={index} className="bg-white/90 backdrop-blur-sm text-gray-800 px-3 py-1 rounded-full text-sm font-medium">
+                {interest}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {user.bio && (
+          <p className="text-white text-lg font-medium">
+            &ldquo;{user.bio}&rdquo;
+          </p>
+        )}
+      </div>
+
+      {/* Info Button */}
+      <div className="absolute bottom-24 right-4">
+        <button className="w-12 h-12 bg-gray-600/50 backdrop-blur-sm rounded-full flex items-center justify-center">
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </button>
+      </div>
+
     </motion.div>
   );
 };

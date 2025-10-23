@@ -2,58 +2,65 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MapPin, Settings, MessageCircle, Sparkles, Users, Grid, Heart, Clock, X, Bell, Check, LogOut, Shield, HelpCircle, Camera, Edit3, Menu, User } from 'lucide-react';
+import { MapPin, Settings, MessageCircle, Sparkles, Users, Grid, Heart, Clock, X, Bell, Check, LogOut, Shield, HelpCircle, Camera, Edit3, Menu, User, ArrowLeft, ArrowRight } from 'lucide-react';
 import { SwipeCard, SwipeActions } from '@/components/swipe/SwipeCard';
 import { BottomNavigation } from '@/components/navigation/BottomNavigation';
 import { Button } from '@/components/ui/Button';
+import { AuthGuard } from '@/components/auth/AuthGuard';
+import { supabaseDatabaseService } from '@/lib/services/supabase-database';
 import type { User as UserType } from '@/types';
 
 // Mock data für Demo-Zwecke
 const mockUsers: UserType[] = [
   {
     id: '1',
-    name: 'Anna',
-    age: 24,
+    name: 'Jagoda',
+    age: 32,
     gender: 'female',
-    bio: 'Volim muziku, ples i upoznavanje novih ljudi! 🎵✨',
-    photos: ['https://images.unsplash.com/photo-1494790108755-2616c0763c5e?w=400'],
+    bio: 'Just authentic, in everything',
+    photos: ['https://images.unsplash.com/photo-1494790108755-2616c0763c5e?w=600&h=800&fit=crop&crop=face'],
     phone: '+49123456789',
     is_online: true,
-    created_at: '2024-01-15T10:00:00Z'
+    created_at: '2024-01-15T10:00:00Z',
+    interests: ['Latino music', 'Wine']
   },
   {
     id: '2',
-    name: 'Max',
+    name: 'Elena',
     age: 28,
-    gender: 'male',
-    bio: 'Fotograf i ljubitelj putovanja. Uvek u potrazi za savršenim trenutkom 📸',
-    photos: ['https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400'],
+    gender: 'female',
+    bio: 'Dancing through life with passion and joy',
+    photos: ['https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=800&fit=crop&crop=face'],
     phone: '+49123456790',
     is_online: true,
-    created_at: '2024-01-15T10:05:00Z'
+    created_at: '2024-01-15T10:05:00Z',
+    interests: ['Dancing', 'Travel', 'Photography']
   },
   {
     id: '3',
     name: 'Sophie',
     age: 26,
     gender: 'female',
-    bio: 'Instruktor joge i zavisnik od kafe ☕ Idemo zajedno da istražimo grad!',
-    photos: ['https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400'],
+    bio: 'Yoga instructor and coffee addict. Let\'s explore the city together!',
+    photos: ['https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=600&h=800&fit=crop&crop=face'],
     phone: '+49123456791',
     is_online: false,
-    created_at: '2024-01-15T10:10:00Z'
+    created_at: '2024-01-15T10:10:00Z',
+    interests: ['Yoga', 'Coffee', 'Hiking']
   },
   {
     id: '4',
-    name: 'Tom',
-    age: 30,
-    gender: 'male',
-    bio: 'Ljubitelj kraft piva 🍺 Tražim nekoga za duboke razgovore',
-    photos: ['https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400'],
+    name: 'Mila',
+    age: 24,
+    gender: 'female',
+    bio: 'Art lover seeking deep conversations and new adventures',
+    photos: ['https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=600&h=800&fit=crop&crop=face'],
     phone: '+49123456792',
     is_online: true,
-    created_at: '2024-01-15T10:15:00Z'
+    created_at: '2024-01-15T10:15:00Z',
+    interests: ['Art', 'Books', 'Craft Beer']
   }
 ];
 
@@ -73,13 +80,16 @@ interface PendingLike {
 
 export default function DiscoverPage() {
   const searchParams = useSearchParams();
+  const { user, loading } = useAuth();
   const [users, setUsers] = useState<UserType[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [matches, setMatches] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [venue, setVenue] = useState('Club Paradise');
-  const [onlineCount, setOnlineCount] = useState(12);
+  const [venue, setVenue] = useState('Club Olimp');
+  const [onlineCount, setOnlineCount] = useState(0);
   const [viewMode, setViewMode] = useState<'swipe' | 'list'>('swipe');
+  
+  // Single browse mode - direct like/pass
   
   // Like-System State
   const [sentLikes, setSentLikes] = useState<LikeData[]>([]);
@@ -88,7 +98,8 @@ export default function DiscoverPage() {
   const [showLikeNotifications, setShowLikeNotifications] = useState(false);
   const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [currentUserId] = useState('current-user-123'); // Mock current user ID
+  
+  const currentUserId = user?.id || null;
 
   // Use Next.js useSearchParams to listen for URL parameter changes
   useEffect(() => {
@@ -102,23 +113,63 @@ export default function DiscoverPage() {
   }, [searchParams, viewMode]);
 
   useEffect(() => {
-    // Simulate loading users from current venue
-    const loadUsers = () => {
+    const loadUsers = async () => {
+      if (!currentUserId || loading) return;
+      
       console.log('Loading users...');
       setIsLoading(true);
       
-      setTimeout(() => {
-        console.log('Users loaded:', mockUsers);
-        setUsers(mockUsers);
-        setIsLoading(false);
+      try {
+        // Set user as online
+        await supabaseDatabaseService.setUserOnlineStatus(currentUserId, true);
         
-        // Simuliere eingehende Likes beim Laden
-        simulateIncomingLikes();
-      }, 500);
+        // Load available users from database
+        const result = await supabaseDatabaseService.getAvailableUsers(currentUserId);
+        
+        if (result.success && result.users) {
+          console.log('Users loaded from database:', result.users);
+          setUsers(result.users);
+          setOnlineCount(result.users.length);
+        } else {
+          console.error('Failed to load users:', result.error);
+          // Fallback to mock data for now
+          setUsers(mockUsers);
+          setOnlineCount(mockUsers.length);
+        }
+        
+        // Load pending likes
+        await loadPendingLikes();
+        
+      } catch (error) {
+        console.error('Error loading users:', error);
+        // Fallback to mock data
+        setUsers(mockUsers);
+        setOnlineCount(mockUsers.length);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     loadUsers();
-  }, []);
+  }, [currentUserId, loading]);
+
+  const loadPendingLikes = async () => {
+    if (!currentUserId) return;
+    
+    try {
+      const result = await supabaseDatabaseService.getPendingLikes(currentUserId);
+      if (result.success && result.likes) {
+        const pendingLikesData: PendingLike[] = result.likes.map(like => ({
+          id: like.id,
+          fromUser: like.from_user,
+          timestamp: like.created_at
+        }));
+        setPendingLikes(pendingLikesData);
+      }
+    } catch (error) {
+      console.error('Error loading pending likes:', error);
+    }
+  };
 
   // Simuliere eingehende Likes für Demo
   const simulateIncomingLikes = () => {
@@ -140,62 +191,63 @@ export default function DiscoverPage() {
       // Auch zu receivedLikes hinzufügen für Match-Detection
       const receivedLikesData: LikeData[] = mockPendingLikes.map(like => ({
         fromUserId: like.fromUser.id,
-        toUserId: currentUserId,
+        toUserId: currentUserId!,
         timestamp: like.timestamp
       }));
       setReceivedLikes(prev => [...prev, ...receivedLikesData]);
     }, 2000); // Nach 2 Sekunden
   };
 
-  const handleSwipe = (direction: 'left' | 'right', user: UserType) => {
-    if (isAnimating) return; // Prevent multiple swipes
+  const handleSwipe = async (direction: 'left' | 'right', user: UserType) => {
+    if (isAnimating || !currentUserId) return;
     
     setIsAnimating(true);
-    console.log(`Swiped ${direction} on user:`, user.name, `(Index: ${currentIndex})`);
+    console.log(`${direction === 'right' ? 'Liked' : 'Passed'} on user:`, user.name);
     
-    // Process like/match logic asynchronously to not block UI
-    if (direction === 'right') {
-      const newLike: LikeData = {
-        fromUserId: currentUserId,
-        toUserId: user.id,
-        timestamp: new Date().toISOString()
-      };
-      
-      setSentLikes(prev => [...prev, newLike]);
-      
-      // Quick match check
-      const isMatch = receivedLikes.some(like => 
-        like.fromUserId === user.id && like.toUserId === currentUserId
-      );
-      
-      if (isMatch) {
-        setMatches(prev => [...prev, user.id]);
-        console.log(`🎉 Match mit ${user.name}!`);
-        
-        // Update likes asynchronously
-        setTimeout(() => {
-          setSentLikes(prev => prev.map(like => 
-            like.toUserId === user.id ? { ...like, isMatch: true } : like
-          ));
-          setReceivedLikes(prev => prev.map(like => 
-            like.fromUserId === user.id ? { ...like, isMatch: true } : like
-          ));
-          setPendingLikes(prev => prev.filter(like => like.fromUser.id !== user.id));
-        }, 0);
-      }
-    }
-
-    // Move to next user immediately for faster transitions
+    // Move to next user immediately for smooth UX
     setCurrentIndex(prev => {
       const newIndex = prev + 1;
-      console.log(`Moving to index: ${newIndex}, next user:`, users[newIndex]?.name || 'No more users');
+      
+      // If we've seen all users, reload for next round
+      if (newIndex >= users.length) {
+        console.log('Finished all users, reloading...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+        return 0;
+      }
+      
       return newIndex;
     });
     
-    // Reset animation state immediately
+    // Record swipe in background (non-blocking)
+    setTimeout(async () => {
+      try {
+        const action = direction === 'right' ? 'like' : 'pass';
+        const result = await supabaseDatabaseService.recordSwipeAction(
+          currentUserId,
+          user.id,
+          action
+        );
+        
+        if (result.success && result.isMatch) {
+          setMatches(prev => [...prev, user.id]);
+          console.log(`🎉 Match with ${user.name}!`);
+          
+          // Auto-dismiss after 4 seconds
+          setTimeout(() => {
+            setMatches(prev => prev.filter(matchId => matchId !== user.id));
+          }, 4000);
+        }
+      } catch (error) {
+        console.error('Error recording swipe:', error);
+      }
+    }, 0);
+    
+    // Quick animation reset
     setTimeout(() => {
       setIsAnimating(false);
-    }, 50);
+    }, 150);
   };
 
   // Behandle Like-Antworten von Benachrichtigungen
@@ -206,7 +258,7 @@ export default function DiscoverPage() {
     if (response === 'accept') {
       // Like erwidern - erstelle Match
       const newLike: LikeData = {
-        fromUserId: currentUserId,
+        fromUserId: currentUserId!,
         toUserId: pendingLike.fromUser.id,
         timestamp: new Date().toISOString(),
         isMatch: true
@@ -241,12 +293,14 @@ export default function DiscoverPage() {
   };
 
   const handleLike = () => {
+    console.log('Like button clicked!', currentUser?.name);
     if (currentUser && !isAnimating) {
       handleSwipe('right', currentUser);
     }
   };
 
   const handlePass = () => {
+    console.log('Pass button clicked!', currentUser?.name);
     if (currentUser && !isAnimating) {
       handleSwipe('left', currentUser);
     }
@@ -268,70 +322,37 @@ export default function DiscoverPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Compact Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
+    <AuthGuard>
+      <div className="h-screen bg-black relative overflow-hidden">
+        {/* Header */}
+      <header className="absolute top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-4">
+          {/* Left: HotSpot Chat Logo */}
           <div className="flex items-center space-x-3">
-            <div className="p-1.5 bg-pink-100 rounded-lg">
-              <MapPin className="w-4 h-4 text-pink-600" />
-            </div>
+            <img 
+              src="/logo.png" 
+              alt="HotSpot Chat" 
+              className="w-8 h-8"
+            />
             <div>
-              <h1 className="font-semibold text-gray-900 text-sm">{venue}</h1>
-              <div className="flex items-center space-x-1 text-xs text-gray-500">
-                <Users className="w-3 h-3" />
-                <span>{onlineCount} aktivno</span>
-              </div>
+              <div className="text-red-500 font-bold text-sm leading-tight">HOTSPOT</div>
+              <div className="text-red-500 font-bold text-sm leading-tight">CHAT</div>
             </div>
           </div>
           
-          <div className="flex items-center space-x-1">
-            <button 
-              onClick={() => setViewMode(viewMode === 'swipe' ? 'list' : 'swipe')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'list' 
-                  ? 'bg-pink-100 text-pink-600' 
-                  : 'hover:bg-gray-100 text-gray-600'
-              }`}
-              title={viewMode === 'swipe' ? 'Pregled liste' : 'Swipe pregled'}
-            >
-              <Grid className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setShowLikeNotifications(!showLikeNotifications)}
-              className={`relative p-2 rounded-lg transition-colors ${
-                showLikeNotifications
-                  ? 'bg-pink-100 text-pink-600' 
-                  : 'hover:bg-gray-100 text-gray-600'
-              }`}
-              title="Like obaveštenja"
-            >
-              <Bell className="w-5 h-5" />
-              {pendingLikes.length > 0 && (
-                <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                  {pendingLikes.length}
-                </div>
-              )}
-            </button>
-            <button 
-              onClick={() => window.location.href = '/chat'}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Četovi"
-            >
-              <MessageCircle className="w-5 h-5 text-gray-600" />
-            </button>
-            <button 
-              onClick={() => setShowSettingsSidebar(!showSettingsSidebar)}
-              className={`p-2 rounded-lg transition-colors ${
-                showSettingsSidebar
-                  ? 'bg-pink-100 text-pink-600' 
-                  : 'hover:bg-gray-100 text-gray-600'
-              }`}
-              title="Podešavanja"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
+          {/* Center: Club Info */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
+            <div className="text-gray-800 font-semibold text-sm">Club Olimp</div>
+            <div className="text-gray-500 text-xs">{onlineCount} online</div>
           </div>
+          
+          {/* Right: Settings */}
+          <button 
+            onClick={() => setShowSettingsSidebar(!showSettingsSidebar)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <Settings className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
       </header>
 
@@ -620,12 +641,12 @@ export default function DiscoverPage() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-4">
-        <div className="h-[calc(100vh-120px)] relative overflow-hidden">
+      <div className="absolute inset-0 flex flex-col">
+        <div className="flex-1 relative overflow-hidden pt-16">
           {viewMode === 'list' ? (
             // List View
             <div className="h-full overflow-y-auto">
-              <div className="space-y-3 max-w-2xl mx-auto">
+              <div className="space-y-3 px-4">
                 {users.map((user) => (
                   <motion.div
                     key={user.id}
@@ -735,95 +756,106 @@ export default function DiscoverPage() {
             </div>
           ) : (
             // Swipe Cards
-            <div className="relative h-full flex items-start justify-center pt-8">
-              <div className="w-full max-w-sm mx-auto relative h-[650px]">
-                <AnimatePresence mode="popLayout">
-                  {users.slice(currentIndex, currentIndex + 3).map((user, index) => {
-                    const isMainCard = index === 0;
-                    const zIndex = 3 - index;
-                    const scale = 0.95 - (index * 0.05);
-                    const yOffset = index * 10;
-                    
-                    return (
-                      <motion.div
-                        key={`card-${user.id}-${currentIndex}`}
-                        initial={{ 
-                          scale: index === 0 ? 1 : scale,
-                          y: index === 0 ? 0 : yOffset,
-                          opacity: 1
-                        }}
-                        animate={{ 
-                          scale: index === 0 ? 1 : scale,
-                          y: index === 0 ? 0 : yOffset,
-                          opacity: 1,
-                          transition: { 
-                            type: "spring", 
-                            stiffness: 600, 
-                            damping: 35,
-                            duration: 0.2
-                          }
-                        }}
-                        exit={{
-                          scale: 0.8,
-                          opacity: 0,
-                          transition: { duration: 0.1 }
-                        }}
-                        className="absolute inset-0"
-                        style={{ 
-                          zIndex,
-                          pointerEvents: isMainCard ? 'auto' : 'none'
-                        }}
-                      >
-                        {isMainCard ? (
-                          <>
-                            <SwipeCard
-                              user={user}
-                              onSwipe={handleSwipe}
-                              onCardClick={(user) => {
-                                console.log('Card clicked:', user.name);
-                              }}
-                            />
-                            
-                            {/* Like Status Indikatoren */}
-                            {hasLikedUser(user.id) && (
-                              <div className="absolute top-3 right-3 bg-pink-500 text-white px-2 py-1 rounded-lg text-xs font-medium shadow-lg">
-                                <Heart className="w-3 h-3 inline mr-1 fill-current" />
-                                Lajkovano
-                              </div>
-                            )}
-                            
-                            {hasUserLikedUs(user.id) && !hasLikedUser(user.id) && (
-                              <div className="absolute top-3 left-3 bg-yellow-500 text-white px-2 py-1 rounded-lg text-xs font-medium animate-pulse shadow-lg">
-                                💖 Sviđaš mu/joj se!
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <motion.div 
-                            className="absolute inset-0 bg-white rounded-2xl shadow-2xl overflow-hidden"
-                            style={{
-                              backgroundImage: `url(${user.photos[0]})`,
-                              backgroundSize: 'cover',
-                              backgroundPosition: 'center'
-                            }}
-                            initial={{ scale: scale, y: yOffset }}
-                            animate={{ 
-                              scale: scale, 
-                              y: yOffset,
-                              transition: { 
-                                type: "spring", 
-                                stiffness: 600, 
-                                damping: 35,
-                                duration: 0.2
-                              }
-                            }}
+            <div className="relative h-full flex flex-col">
+              {/* Card Container - Full Screen */}
+              <div className="flex-1 relative">
+                <div className="absolute inset-0">
+                  <AnimatePresence mode="popLayout">
+                    {users.slice(currentIndex, currentIndex + 3).map((user, index) => {
+                      const isMainCard = index === 0;
+                      const zIndex = 10 - index;
+                      
+                      return (
+                        <motion.div
+                          key={`card-${user.id}-${currentIndex + index}`}
+                          initial={{ 
+                            scale: 1,
+                            opacity: 1,
+                            zIndex: zIndex
+                          }}
+                          animate={{ 
+                            scale: 1,
+                            opacity: 1,
+                            zIndex: zIndex,
+                            transition: { 
+                              type: "spring", 
+                              stiffness: 400, 
+                              damping: 30,
+                              duration: 0.2
+                            }
+                          }}
+                          className="absolute inset-0 overflow-hidden"
+                          style={{ 
+                            zIndex: zIndex,
+                            pointerEvents: isMainCard ? 'auto' : 'none'
+                          }}
+                        >
+                          <SwipeCard
+                            user={user}
+                            onSwipe={isMainCard ? (direction, user) => {
+                              // Only change card, no database action
+                              console.log(`Swiped ${direction} on ${user.name} - no action recorded`);
+                              setCurrentIndex(prev => {
+                                const newIndex = prev + 1;
+                                if (newIndex >= users.length) {
+                                  setTimeout(() => window.location.reload(), 1000);
+                                  return 0;
+                                }
+                                return newIndex;
+                              });
+                            } : () => {}}
+                            onLike={isMainCard ? handleLike : undefined}
+                            onPass={isMainCard ? handlePass : undefined}
+                            onCardClick={isMainCard ? (user) => {
+                              console.log('Card clicked:', user.name);
+                            } : () => {}}
                           />
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
+                          
+                          {/* Like Status Indikatoren nur für Hauptkarte */}
+                          {isMainCard && hasLikedUser(user.id) && (
+                            <div className="absolute top-20 right-3 bg-pink-500 text-white px-2 py-1 rounded-lg text-xs font-medium shadow-lg z-30">
+                              <Heart className="w-3 h-3 inline mr-1 fill-current" />
+                              Lajkovano
+                            </div>
+                          )}
+                          
+                          {isMainCard && hasUserLikedUs(user.id) && !hasLikedUser(user.id) && (
+                            <div className="absolute top-20 left-3 bg-yellow-500 text-white px-2 py-1 rounded-lg text-xs font-medium animate-pulse shadow-lg z-30">
+                              💖 Sviđaš mu/joj se!
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+              </div>
 
+              {/* Action Buttons - Direct Like/Pass */}
+              <div className="absolute bottom-28 left-0 right-0 z-30 px-6">
+                <div className="flex justify-center items-center space-x-12">
+                  {/* Pass Button */}
+                  <motion.button
+                    onClick={handlePass}
+                    className="w-20 h-20 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center shadow-xl"
+                    whileHover={{ scale: 1.1, backgroundColor: "rgba(255,255,255,0.3)" }}
+                    whileTap={{ scale: 0.9 }}
+                    disabled={!currentUser || isAnimating}
+                  >
+                    <X className="w-10 h-10 text-white" />
+                  </motion.button>
+
+                  {/* Like Button */}
+                  <motion.button
+                    onClick={handleLike}
+                    className="w-20 h-20 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20"
+                    whileHover={{ scale: 1.1, boxShadow: "0 0 30px rgba(236, 72, 153, 0.5)" }}
+                    whileTap={{ scale: 0.9 }}
+                    disabled={!currentUser || isAnimating}
+                  >
+                    <Heart className="w-10 h-10 text-white fill-current" />
+                  </motion.button>
+                </div>
               </div>
             </div>
           )}
@@ -834,37 +866,33 @@ export default function DiscoverPage() {
       <AnimatePresence>
         {matches.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="fixed inset-0 flex items-center justify-center p-4"
-            style={{ zIndex: 9999 }}
+            initial={{ opacity: 0, scale: 0.3, y: -100 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.3, y: -100 }}
+            className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-80"
           >
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            
             {/* Match Notification */}
-            <div className="relative bg-gradient-to-r from-pink-500 to-purple-600 rounded-2xl p-6 shadow-2xl max-w-sm w-full">
+            <div className="bg-gradient-to-r from-pink-500 to-purple-600 rounded-2xl p-6 shadow-2xl mx-4">
               <div className="text-center">
                 <div className="flex justify-center mb-4">
-                  <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                    <Heart className="w-8 h-8 text-white fill-current" />
+                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
+                    <Heart className="w-6 h-6 text-white fill-current" />
                   </div>
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-3">
-                  To je Match! 🎉
+                <h2 className="text-xl font-bold text-white mb-2">
+                  It's a Match! 🎉
                 </h2>
-                <p className="text-white/90 text-sm mb-6">
-                  Ti i {users.find(u => u.id === matches[matches.length - 1])?.name} ste se međusobno lajkovali!
+                <p className="text-white/90 text-sm mb-4">
+                  You and {users.find(u => u.id === matches[matches.length - 1])?.name} liked each other!
                 </p>
-                <div className="flex space-x-3">
+                <div className="flex space-x-2">
                   <Button 
                     size="sm" 
                     variant="secondary"
                     onClick={() => setMatches(prev => prev.slice(1))}
-                    className="flex-1 py-3"
+                    className="flex-1 py-2 text-xs bg-white/20 hover:bg-white/30 text-white border-white/30"
                   >
-                    Nastavi
+                    Continue
                   </Button>
                   <Button 
                     size="sm" 
@@ -874,10 +902,10 @@ export default function DiscoverPage() {
                       setMatches(prev => prev.slice(1));
                       window.location.href = `/chat?match=${matchUserId}`;
                     }}
-                    className="flex-1 py-3"
+                    className="flex-1 py-2 text-xs bg-white hover:bg-white/90 text-pink-600"
                   >
-                    <MessageCircle className="w-4 h-4 mr-2" />
-                    Čet
+                    <MessageCircle className="w-3 h-3 mr-1" />
+                    Chat
                   </Button>
                 </div>
               </div>
@@ -911,6 +939,7 @@ export default function DiscoverPage() {
       
       {/* Bottom spacing for navigation */}
       <div className="h-20"></div>
-    </div>
+      </div>
+    </AuthGuard>
   );
 }

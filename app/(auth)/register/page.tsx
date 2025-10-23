@@ -2,11 +2,14 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, ArrowLeft, User, Phone, Calendar, Users, ChevronDown } from 'lucide-react';
+import { Heart, ArrowLeft, User, Phone, Calendar, Users, ChevronDown, Camera, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { supportedCountries, formatPhoneNumber, validatePhoneNumber, type CountryCode } from '@/lib/utils/phone';
+import { supabaseAuth } from '@/lib/auth/supabase-auth';
+import { supabaseStorageService } from '@/lib/services/supabase-storage';
+import { supabaseDatabaseService } from '@/lib/services/supabase-database';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,6 +20,9 @@ export default function RegisterPage() {
     gender: '',
     bio: ''
   });
+  const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(supportedCountries[0]); // Default to Germany
   const [showCountrySelector, setShowCountrySelector] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,8 +58,25 @@ export default function RegisterPage() {
     }
   };
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newPhotos = [...selectedPhotos, ...files].slice(0, 6); // Max 6 photos
+    setSelectedPhotos(newPhotos);
+    
+    // Create preview URLs
+    const urls = newPhotos.map(file => URL.createObjectURL(file));
+    setPhotoUrls(urls);
+  };
+
+  const removePhoto = (index: number) => {
+    const newPhotos = selectedPhotos.filter((_, i) => i !== index);
+    const newUrls = photoUrls.filter((_, i) => i !== index);
+    setSelectedPhotos(newPhotos);
+    setPhotoUrls(newUrls);
+  };
+
   const handleNext = () => {
-    if (step < 3) {
+    if (step < 4) {
       setStep(step + 1);
     } else {
       handleSubmit();
@@ -70,14 +93,52 @@ export default function RegisterPage() {
 
   const handleSubmit = async () => {
     setIsLoading(true);
-    // TODO: Implement registration logic with Supabase
-    console.log('Registration data:', formData);
+    setUploadingPhotos(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      // First, send verification code (Demo mode)
+      const verificationResponse = await supabaseAuth.sendVerificationCode(formData.phone);
+      
+      if (!verificationResponse.success) {
+        throw new Error(verificationResponse.error || 'Fehler beim Senden des Verifizierungscodes');
+      }
+
+      // Show demo notice
+      alert('Demo Modus: Verwende den Code 123456 für die Verifikation');
+
+      // Upload photos first if any are selected
+      let uploadedPhotoUrls: string[] = [];
+      if (selectedPhotos.length > 0) {
+        const uploadPromises = selectedPhotos.map(async (photo, index) => {
+          const tempUserId = `temp_${Date.now()}_${index}`;
+          const uploadResult = await supabaseStorageService.uploadFile(photo, tempUserId);
+          if (uploadResult.success && uploadResult.url) {
+            return uploadResult.url;
+          }
+          throw new Error(`Fehler beim Hochladen von Foto ${index + 1}`);
+        });
+
+        uploadedPhotoUrls = await Promise.all(uploadPromises);
+      }
+
+      // Store complete registration data including photo URLs
+      const registrationData = {
+        ...formData,
+        photos: uploadedPhotoUrls,
+        age: parseInt(formData.age),
+        country: selectedCountry.code
+      };
+      
+      localStorage.setItem('registrationData', JSON.stringify(registrationData));
       router.push('/verify');
-    }, 2000);
+      
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      alert(error.message || 'Fehler bei der Registrierung');
+    } finally {
+      setIsLoading(false);
+      setUploadingPhotos(false);
+    }
   };
 
   const isStepValid = () => {
@@ -87,6 +148,8 @@ export default function RegisterPage() {
       case 2:
         return formData.age && parseInt(formData.age) >= 18 && formData.gender;
       case 3:
+        return selectedPhotos.length >= 1; // At least one photo required
+      case 4:
         return formData.bio.length >= 10;
       default:
         return false;
@@ -131,14 +194,14 @@ export default function RegisterPage() {
           </h1>
           
           <p className="text-gray-600">
-            Korak {step} od 3
+            Korak {step} od 4
           </p>
         </div>
 
         {/* Progress Bar */}
         <div className="mb-8">
           <div className="flex justify-between mb-2">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
@@ -154,7 +217,7 @@ export default function RegisterPage() {
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500 ease-out"
-              style={{ width: `${(step / 3) * 100}%` }}
+              style={{ width: `${(step / 4) * 100}%` }}
             />
           </div>
         </div>
@@ -281,6 +344,80 @@ export default function RegisterPage() {
           {step === 3 && (
             <div className="space-y-6">
               <div className="text-center mb-6">
+                <Camera className="w-12 h-12 text-blue-500 mx-auto mb-3" />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Dodaj slike</h2>
+                <p className="text-gray-600 text-sm">Dodaj najmanje jednu sliku (maksimalno 6)</p>
+              </div>
+              
+              <div>
+                <label className="block text-gray-700 text-sm font-medium mb-2">
+                  Slike (minimum 1, maksimalno 6)
+                </label>
+                
+                {/* Photo Grid */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="aspect-square bg-gray-100 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden"
+                    >
+                      {photoUrls[index] ? (
+                        <>
+                          <img
+                            src={photoUrls[index]}
+                            alt={`Slika ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(index)}
+                            className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="text-center">
+                          <Camera className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                          <span className="text-xs text-gray-400">
+                            {index === 0 ? 'Glavna' : `${index + 1}`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Upload Button */}
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePhotoChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    disabled={selectedPhotos.length >= 6}
+                  />
+                  <button
+                    type="button"
+                    disabled={selectedPhotos.length >= 6}
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-700 rounded-xl px-4 py-3 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    <Camera className="w-5 h-5 mr-2" />
+                    {selectedPhotos.length >= 6 ? 'Maksimalno 6 slika' : 'Izaberi slike'}
+                  </button>
+                </div>
+                
+                <p className="text-gray-500 text-xs mt-2">
+                  {selectedPhotos.length}/6 slika • Podržani formati: JPG, PNG, WEBP
+                </p>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
                 <Users className="w-12 h-12 text-blue-500 mx-auto mb-3" />
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Opiši se</h2>
                 <p className="text-gray-600 text-sm">Napiši nešto zanimljivo o sebi</p>
@@ -309,15 +446,15 @@ export default function RegisterPage() {
           <div className="mt-8 space-y-4">
             <Button
               onClick={handleNext}
-              disabled={!isStepValid() || isLoading}
+              disabled={!isStepValid() || isLoading || uploadingPhotos}
               className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              {isLoading ? (
+              {isLoading || uploadingPhotos ? (
                 <div className="flex items-center justify-center">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                  Pravi nalog...
+                  {uploadingPhotos ? 'Otpremam slike...' : 'Pravi nalog...'}
                 </div>
-              ) : step === 3 ? (
+              ) : step === 4 ? (
                 'Završi registraciju'
               ) : (
                 'Nastavi'
