@@ -1,16 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase, isSupabaseAvailable, withSupabase } from '@/lib/auth/supabase-client';
 import { normalizePhoneNumber } from '@/lib/utils/phone';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true
-  }
-});
+// Re-export supabase for backward compatibility
+export { supabase };
 
 export interface AuthResponse {
   success: boolean;
@@ -76,6 +68,14 @@ export class SupabaseAuth {
    */
   async verifyOTP(phoneNumber: string, code: string): Promise<AuthResponse> {
     try {
+      if (!isSupabaseAvailable()) {
+        return {
+          success: false,
+          message: 'Service nicht verfügbar',
+          error: 'Supabase not available'
+        };
+      }
+
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
       
       // Demo verification - accept code 123456
@@ -92,15 +92,27 @@ export class SupabaseAuth {
       const dummyEmail = `user_${normalizedPhone.replace(/[^0-9]/g, '')}@demo.hotspot.com`;
       const dummyPassword = `temp_${Date.now()}`;
 
-      const { data, error } = await supabase.auth.signUp({
-        email: dummyEmail,
-        password: dummyPassword,
-        options: {
-          data: {
-            phone: normalizedPhone
+      const result = await withSupabase(async (client) => {
+        return await client.auth.signUp({
+          email: dummyEmail,
+          password: dummyPassword,
+          options: {
+            data: {
+              phone: normalizedPhone
+            }
           }
-        }
+        });
       });
+
+      if (!result) {
+        return {
+          success: false,
+          message: 'Service nicht verfügbar',
+          error: 'Supabase operation failed'
+        };
+      }
+
+      const { data, error } = result;
 
       if (error) {
         console.error('Demo signup error:', error);

@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+
+// Force dynamic rendering to prevent build-time errors
+export const dynamic = 'force-dynamic';
 import { useRouter } from 'next/navigation';
 import { Heart, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
