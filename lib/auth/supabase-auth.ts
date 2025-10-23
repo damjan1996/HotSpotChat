@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { normalizePhoneNumber } from '@/lib/utils/phone';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rhgpswjsphnkrkvibvsx.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoZ3Bzd2pzcGhua3JrdmlidnN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMTY2OTEsImV4cCI6MjA3Njc5MjY5MX0.xl-BKaYIfIq1HyE2koON9yUJrD5jR-wi72lYmeGTjUU';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

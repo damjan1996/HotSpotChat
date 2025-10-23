@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { User, Venue, Match, Message, Like, CheckIn } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rhgpswjsphnkrkvibvsx.supabase.co';
@@ -10,7 +9,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Client für Client-side Components
 export const createSupabaseClient = () => {
-  return createClientComponentClient();
+  return createClient(supabaseUrl, supabaseAnonKey);
 };
 
 // Database Helper Functions
