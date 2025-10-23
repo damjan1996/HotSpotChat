@@ -1,8 +1,5 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Shield, RefreshCw } from 'lucide-react';
@@ -111,7 +108,7 @@ export default function VerifyPage() {
         name: registrationData.name,
         phone: registrationData.phone,
         age: registrationData.age,
-        gender: registrationData.gender as 'male' | 'female' | 'other',
+        gender: registrationData.gender,
         bio: registrationData.bio || '',
         photos: registrationData.photos || [],
         is_online: true,

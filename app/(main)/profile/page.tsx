@@ -1,11 +1,9 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Edit3, Camera, MapPin, Calendar, Heart, MessageCircle, Settings, Share, Loader2, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Edit3, Camera, MapPin, Calendar, Heart, MessageCircle, Settings, Share, Loader2, RefreshCw, X, Bell, LogOut, Shield, HelpCircle, Menu, User, Sparkles, Grid } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { BottomNavigation } from '@/components/navigation/BottomNavigation';
@@ -18,6 +16,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ likes: 0, matches: 0 });
   const [refreshing, setRefreshing] = useState(false);
+  const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(12);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -132,43 +132,216 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative">
 
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <div className="flex items-center space-x-2">
+      <header className="absolute top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-4">
+          {/* Left: HotSpot Chat Logo */}
+          <div className="flex items-center space-x-3">
+            <img 
+              src="/logo.png" 
+              alt="HotSpot Chat" 
+              className="w-8 h-8"
+            />
+            <div>
+              <div className="text-red-500 font-bold text-sm leading-tight">HOTSPOT</div>
+              <div className="text-red-500 font-bold text-sm leading-tight">CHAT</div>
+            </div>
           </div>
           
-          <h1 className="text-lg font-semibold text-gray-900">Moj profil</h1>
-          
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Osvježi profil"
-            >
-              <RefreshCw className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => router.push('/profile/edit')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Uredi profil"
-            >
-              <Edit3 className="w-5 h-5 text-gray-600" />
-            </button>
-            <button
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Podeli profil"
-            >
-              <Share className="w-5 h-5 text-gray-600" />
-            </button>
+          {/* Center: Club Info */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
+            <div className="text-gray-800 font-semibold text-sm">Club Olimp</div>
+            <div className="text-gray-500 text-xs">{onlineCount} online</div>
           </div>
+          
+          {/* Right: Settings */}
+          <button 
+            onClick={() => setShowSettingsSidebar(!showSettingsSidebar)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <Settings className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-6">
+      {/* Settings Sidebar */}
+      <AnimatePresence>
+        {showSettingsSidebar && (
+          <>
+            {/* Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+              onClick={() => setShowSettingsSidebar(false)}
+            />
+            
+            {/* Sidebar */}
+            <motion.div
+              initial={{ x: 320 }}
+              animate={{ x: 0 }}
+              exit={{ x: 320 }}
+              transition={{ 
+                type: "spring", 
+                stiffness: 300, 
+                damping: 30,
+                duration: 0.3
+              }}
+              className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 border-l border-gray-200"
+            >
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Podešavanja</h2>
+                <button
+                  onClick={() => setShowSettingsSidebar(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-2">
+                {/* Navigation Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Navigacija</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/discover';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Sparkles className="w-5 h-5 text-pink-500 mr-3" />
+                    <span className="text-gray-900">Discovery</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <User className="w-5 h-5 text-blue-500 mr-3" />
+                    <span className="text-gray-900">Moj profil</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/chat';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5 text-green-500 mr-3" />
+                    <span className="text-gray-900">Razgovori</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/dashboard';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Grid className="w-5 h-5 text-purple-500 mr-3" />
+                    <span className="text-gray-900">Dashboard</span>
+                  </button>
+                </div>
+
+                {/* Profile Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Profil</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile/edit';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Edit3 className="w-5 h-5 text-orange-500 mr-3" />
+                    <span className="text-gray-900">Uredi profil</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile/photos';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Camera className="w-5 h-5 text-cyan-500 mr-3" />
+                    <span className="text-gray-900">Moje fotografije</span>
+                  </button>
+                </div>
+
+                {/* Settings Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Podešavanja</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/settings/privacy';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Shield className="w-5 h-5 text-indigo-500 mr-3" />
+                    <span className="text-gray-900">Privatnost i bezbednost</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/settings/notifications';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Bell className="w-5 h-5 text-yellow-500 mr-3" />
+                    <span className="text-gray-900">Obaveštenja</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/help';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <HelpCircle className="w-5 h-5 text-teal-500 mr-3" />
+                    <span className="text-gray-900">Pomoć i podrška</span>
+                  </button>
+                </div>
+
+                {/* Logout Section */}
+                <div className="pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem('authenticated');
+                      window.location.href = '/login';
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <LogOut className="w-5 h-5 text-red-500 mr-3" />
+                    <span className="text-red-600">Odjavi se</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <div className="max-w-4xl mx-auto px-4 py-6 pt-20">
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Photo Section */}
           <div className="lg:col-span-1">

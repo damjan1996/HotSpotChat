@@ -40,17 +40,25 @@ export class SupabaseDatabaseService {
    */
   async getAvailableUsers(currentUserId: string): Promise<{ success: boolean; users?: UserProfile[]; error?: string }> {
     try {
-      // Get users that haven't been swiped by current user
-      const { data: swipedUsers, error: swipeError } = await supabase
-        .from('swipe_actions')
-        .select('to_user_id')
-        .eq('from_user_id', currentUserId);
+      let swipedUserIds: string[] = [];
 
-      if (swipeError) {
-        throw swipeError;
+      // Try to get users that haven't been swiped by current user (if table exists)
+      try {
+        const { data: swipedUsers, error: swipeError } = await supabase
+          .from('swipe_actions')
+          .select('to_user_id')
+          .eq('from_user_id', currentUserId);
+
+        if (swipeError) {
+          console.warn('Swipe actions table not found or accessible:', swipeError.message);
+          // Continue without swipe filtering if table doesn't exist
+        } else {
+          swipedUserIds = swipedUsers?.map(s => s.to_user_id) || [];
+        }
+      } catch (swipeTableError) {
+        console.warn('Swipe actions table error:', swipeTableError);
+        // Continue without swipe filtering
       }
-
-      const swipedUserIds = swipedUsers?.map(s => s.to_user_id) || [];
       
       // Get all users except current user and already swiped users
       let query = supabase
@@ -58,7 +66,7 @@ export class SupabaseDatabaseService {
         .select('*')
         .neq('id', currentUserId);
 
-      // Exclude already swiped users
+      // Exclude already swiped users (only if we have swipe data)
       if (swipedUserIds.length > 0) {
         query = query.not('id', 'in', `(${swipedUserIds.join(',')})`);
       }
@@ -68,7 +76,12 @@ export class SupabaseDatabaseService {
         .limit(20);
 
       if (error) {
-        throw error;
+        console.error('Users table error:', error);
+        // Return empty array instead of throwing
+        return {
+          success: true,
+          users: []
+        };
       }
 
       return {
@@ -76,9 +89,10 @@ export class SupabaseDatabaseService {
         users: data as UserProfile[]
       };
     } catch (error: any) {
+      console.warn('Database service error, returning empty users:', error.message);
       return {
-        success: false,
-        error: error.message
+        success: true,
+        users: []
       };
     }
   }
@@ -156,34 +170,238 @@ export class SupabaseDatabaseService {
   }
 
   /**
-   * Get user's matches
+   * Get user's matches with other user details
    */
   async getUserMatches(userId: string): Promise<{ success: boolean; matches?: any[]; error?: string }> {
     try {
+      // First try to check if matches table exists by querying it
       const { data, error } = await supabase
         .from('matches')
         .select('*')
         .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
         .eq('is_active', true)
-        .order('matched_at', { ascending: false });
+        .order('matched_at', { ascending: false })
+        .limit(1);
 
       if (error) {
-        // If table doesn't exist or access denied, return empty array
-        console.warn('Matches query error:', error);
+        console.warn('Matches table does not exist or has issues:', error.message);
+        // Return empty matches if table doesn't exist
         return {
           success: true,
           matches: []
         };
       }
 
+      // If we have matches, get the full data with user details
+      const { data: fullData, error: fullError } = await supabase
+        .from('matches')
+        .select('*')
+        .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
+        .eq('is_active', true)
+        .order('matched_at', { ascending: false });
+
+      if (fullError) {
+        console.warn('Error fetching full matches:', fullError.message);
+        return {
+          success: true,
+          matches: []
+        };
+      }
+
+      // Get user details for each match separately
+      const matchesWithUsers = [];
+      
+      for (const match of fullData || []) {
+        const otherUserId = match.user1_id === userId ? match.user2_id : match.user1_id;
+        
+        // Get other user details
+        const { data: otherUser, error: userError } = await supabase
+          .from('users')
+          .select('id, name, photos, is_online, age, bio')
+          .eq('id', otherUserId)
+          .single();
+
+        if (!userError && otherUser) {
+          matchesWithUsers.push({
+            ...match,
+            otherUser: otherUser
+          });
+        }
+      }
+
       return {
         success: true,
-        matches: data || []
+        matches: matchesWithUsers
       };
     } catch (error: any) {
+      console.warn('Matches error (expected if table not created):', error.message);
       return {
-        success: true, // Return success with empty array instead of error
+        success: true,
         matches: []
+      };
+    }
+  }
+
+  /**
+   * Get messages for a specific match
+   */
+  async getMatchMessages(matchId: string): Promise<{ success: boolean; messages?: any[]; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          sender:sender_id(id, name, photos)
+        `)
+        .eq('match_id', matchId)
+        .order('sent_at', { ascending: true });
+
+      if (error) {
+        console.warn('Messages query error (expected if table not created):', error.message);
+        return {
+          success: true,
+          messages: []
+        };
+      }
+
+      return {
+        success: true,
+        messages: data || []
+      };
+    } catch (error: any) {
+      console.warn('Messages error (expected if table not created):', error.message);
+      return {
+        success: true,
+        messages: []
+      };
+    }
+  }
+
+  /**
+   * Send a message in a match
+   */
+  async sendMessage(matchId: string, senderId: string, receiverId: string, text: string): Promise<{ success: boolean; message?: any; error?: string }> {
+    try {
+      const messageData = {
+        match_id: matchId,
+        sender_id: senderId,
+        receiver_id: receiverId,
+        text: text,
+        sent_at: new Date().toISOString(),
+        is_read: false,
+        message_type: 'text'
+      };
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert(messageData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Send message error:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+
+      // Update match's last_message_at
+      await supabase
+        .from('matches')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', matchId);
+
+      return {
+        success: true,
+        message: data
+      };
+    } catch (error: any) {
+      console.error('Send message error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get chat conversations (matches with last messages)
+   */
+  async getChatConversations(userId: string): Promise<{ success: boolean; conversations?: any[]; error?: string }> {
+    try {
+      // First check if matches table exists
+      const { data: matchesData, error: matchesError } = await supabase
+        .from('matches')
+        .select('*')
+        .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
+        .eq('is_active', true)
+        .order('last_message_at', { ascending: false, nullsFirst: false });
+
+      if (matchesError) {
+        console.warn('Conversations query error (expected if table not created):', matchesError.message);
+        return {
+          success: true,
+          conversations: []
+        };
+      }
+
+      const conversations = await Promise.all(
+        (matchesData || []).map(async (match) => {
+          const otherUserId = match.user1_id === userId ? match.user2_id : match.user1_id;
+          
+          // Get other user details
+          const { data: otherUser, error: userError } = await supabase
+            .from('users')
+            .select('id, name, photos, is_online')
+            .eq('id', otherUserId)
+            .single();
+
+          if (userError) {
+            console.warn('Error fetching user details:', userError.message);
+            return null;
+          }
+          
+          // Get last message for this match
+          const { data: lastMessage } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('match_id', match.id)
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          // Count unread messages  
+          const { count: unreadCount } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('match_id', match.id)
+            .eq('receiver_id', userId)
+            .eq('is_read', false);
+
+          return {
+            id: match.id,
+            matchId: match.id,
+            otherUser: otherUser,
+            lastMessage: lastMessage,
+            unreadCount: unreadCount || 0,
+            matchedAt: match.matched_at
+          };
+        })
+      );
+
+      // Filter out null results
+      const validConversations = conversations.filter(conv => conv !== null);
+
+      return {
+        success: true,
+        conversations: validConversations
+      };
+    } catch (error: any) {
+      console.warn('Conversations error (expected if table not created):', error.message);
+      return {
+        success: true,
+        conversations: []
       };
     }
   }
@@ -195,14 +413,16 @@ export class SupabaseDatabaseService {
     try {
       const { data, error } = await supabase
         .from('swipe_actions')
-        .select('*')
+        .select(`
+          *,
+          from_user:from_user_id(id, name, photos, age, bio, is_online)
+        `)
         .eq('to_user_id', userId)
         .eq('action', 'like')
         .order('created_at', { ascending: false });
 
       if (error) {
-        // If table doesn't exist or access denied, return empty array
-        console.warn('Swipe actions query error:', error);
+        console.warn('Pending likes query error (expected if table not created):', error.message);
         return {
           success: true,
           likes: []
@@ -214,9 +434,176 @@ export class SupabaseDatabaseService {
         likes: data || []
       };
     } catch (error: any) {
+      console.warn('Pending likes error (expected if table not created):', error.message);
       return {
-        success: true, // Return success with empty array instead of error
+        success: true,
         likes: []
+      };
+    }
+  }
+
+  /**
+   * Get likes sent by current user
+   */
+  async getSentLikes(userId: string): Promise<{ success: boolean; likes?: any[]; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('swipe_actions')
+        .select(`
+          *,
+          to_user:to_user_id(id, name, photos, age, bio, is_online)
+        `)
+        .eq('from_user_id', userId)
+        .eq('action', 'like')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Sent likes query error (expected if table not created):', error.message);
+        return {
+          success: true,
+          likes: []
+        };
+      }
+
+      return {
+        success: true,
+        likes: data || []
+      };
+    } catch (error: any) {
+      console.warn('Sent likes error (expected if table not created):', error.message);
+      return {
+        success: true,
+        likes: []
+      };
+    }
+  }
+
+  /**
+   * Get blocked users by current user
+   */
+  async getBlockedUsers(userId: string): Promise<{ success: boolean; users?: any[]; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('swipe_actions')
+        .select(`
+          *,
+          to_user:to_user_id(id, name, photos, age, bio, is_online)
+        `)
+        .eq('from_user_id', userId)
+        .eq('action', 'block')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Blocked users query error (expected if table not created):', error.message);
+        return {
+          success: true,
+          users: []
+        };
+      }
+
+      return {
+        success: true,
+        users: data || []
+      };
+    } catch (error: any) {
+      console.warn('Blocked users error (expected if table not created):', error.message);
+      return {
+        success: true,
+        users: []
+      };
+    }
+  }
+
+  /**
+   * Unblock a user
+   */
+  async unblockUser(fromUserId: string, toUserId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase
+        .from('swipe_actions')
+        .delete()
+        .eq('from_user_id', fromUserId)
+        .eq('to_user_id', toUserId)
+        .eq('action', 'block');
+
+      if (error) {
+        console.error('Unblock user error:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get user interaction analytics
+   */
+  async getUserInteractionStats(userId: string): Promise<{ success: boolean; stats?: any; error?: string }> {
+    try {
+      // Get sent actions count
+      const { count: sentLikes } = await supabase
+        .from('swipe_actions')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_user_id', userId)
+        .eq('action', 'like');
+
+      const { count: sentPasses } = await supabase
+        .from('swipe_actions')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_user_id', userId)
+        .eq('action', 'pass');
+
+      const { count: blockedUsers } = await supabase
+        .from('swipe_actions')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_user_id', userId)
+        .eq('action', 'block');
+
+      // Get received likes count
+      const { count: receivedLikes } = await supabase
+        .from('swipe_actions')
+        .select('*', { count: 'exact', head: true })
+        .eq('to_user_id', userId)
+        .eq('action', 'like');
+
+      // Get matches count
+      const { count: matches } = await supabase
+        .from('matches')
+        .select('*', { count: 'exact', head: true })
+        .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
+        .eq('is_active', true);
+
+      return {
+        success: true,
+        stats: {
+          sentLikes: sentLikes || 0,
+          sentPasses: sentPasses || 0,
+          blockedUsers: blockedUsers || 0,
+          receivedLikes: receivedLikes || 0,
+          matches: matches || 0
+        }
+      };
+    } catch (error: any) {
+      console.warn('User stats error (expected if tables not created):', error.message);
+      return {
+        success: true,
+        stats: {
+          sentLikes: 0,
+          sentPasses: 0,
+          blockedUsers: 0,
+          receivedLikes: 0,
+          matches: 0
+        }
       };
     }
   }

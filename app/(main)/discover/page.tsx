@@ -1,8 +1,5 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -126,7 +123,7 @@ export default function DiscoverPage() {
         // Set user as online
         await supabaseDatabaseService.setUserOnlineStatus(currentUserId, true);
         
-        // Load available users from database
+        // Load available users from database (excludes already swiped users)
         const result = await supabaseDatabaseService.getAvailableUsers(currentUserId);
         
         if (result.success && result.users) {
@@ -135,13 +132,17 @@ export default function DiscoverPage() {
           setOnlineCount(result.users.length);
         } else {
           console.error('Failed to load users:', result.error);
-          // Fallback to mock data for now
+          // Fallback to mock data for demo
+          console.log('Using mock data as fallback');
           setUsers(mockUsers);
           setOnlineCount(mockUsers.length);
         }
         
-        // Load pending likes
-        await loadPendingLikes();
+        // Load pending likes and sent likes for local state
+        await Promise.all([
+          loadPendingLikes(),
+          loadSentLikes()
+        ]);
         
       } catch (error) {
         console.error('Error loading users:', error);
@@ -168,9 +169,35 @@ export default function DiscoverPage() {
           timestamp: like.created_at
         }));
         setPendingLikes(pendingLikesData);
+        
+        // Also add to receivedLikes for match detection
+        const receivedLikesData: LikeData[] = result.likes.map(like => ({
+          fromUserId: like.from_user.id,
+          toUserId: currentUserId,
+          timestamp: like.created_at
+        }));
+        setReceivedLikes(receivedLikesData);
       }
     } catch (error) {
       console.error('Error loading pending likes:', error);
+    }
+  };
+
+  const loadSentLikes = async () => {
+    if (!currentUserId) return;
+    
+    try {
+      const result = await supabaseDatabaseService.getSentLikes(currentUserId);
+      if (result.success && result.likes) {
+        const sentLikesData: LikeData[] = result.likes.map(like => ({
+          fromUserId: currentUserId,
+          toUserId: like.to_user.id,
+          timestamp: like.created_at
+        }));
+        setSentLikes(sentLikesData);
+      }
+    } catch (error) {
+      console.error('Error loading sent likes:', error);
     }
   };
 
@@ -201,11 +228,14 @@ export default function DiscoverPage() {
     }, 2000); // Nach 2 Sekunden
   };
 
-  const handleSwipe = async (direction: 'left' | 'right', user: UserType) => {
+  const handleSwipe = async (direction: 'left' | 'right', user: UserType, action?: 'like' | 'pass' | 'block') => {
     if (isAnimating || !currentUserId) return;
     
     setIsAnimating(true);
-    console.log(`${direction === 'right' ? 'Liked' : 'Passed'} on user:`, user.name);
+    
+    // Determine action based on direction or explicit action
+    const swipeAction = action || (direction === 'right' ? 'like' : 'pass');
+    console.log(`${swipeAction} on user:`, user.name);
     
     // Move to next user immediately for smooth UX
     setCurrentIndex(prev => {
@@ -226,21 +256,41 @@ export default function DiscoverPage() {
     // Record swipe in background (non-blocking)
     setTimeout(async () => {
       try {
-        const action = direction === 'right' ? 'like' : 'pass';
         const result = await supabaseDatabaseService.recordSwipeAction(
           currentUserId,
           user.id,
-          action
+          swipeAction
         );
         
-        if (result.success && result.isMatch) {
-          setMatches(prev => [...prev, user.id]);
-          console.log(`🎉 Match with ${user.name}!`);
+        if (result.success) {
+          console.log(`✅ ${swipeAction} recorded for ${user.name}`);
           
-          // Auto-dismiss after 4 seconds
-          setTimeout(() => {
-            setMatches(prev => prev.filter(matchId => matchId !== user.id));
-          }, 4000);
+          // Update local state based on action
+          if (swipeAction === 'like') {
+            const newLike: LikeData = {
+              fromUserId: currentUserId,
+              toUserId: user.id,
+              timestamp: new Date().toISOString(),
+              isMatch: result.isMatch
+            };
+            setSentLikes(prev => [...prev, newLike]);
+            
+            if (result.isMatch) {
+              setMatches(prev => [...prev, user.id]);
+              console.log(`🎉 Match with ${user.name}!`);
+              
+              // Auto-dismiss after 4 seconds
+              setTimeout(() => {
+                setMatches(prev => prev.filter(matchId => matchId !== user.id));
+              }, 4000);
+            }
+          } else if (swipeAction === 'block') {
+            console.log(`🚫 Blocked ${user.name}`);
+            // Remove from current users list
+            setUsers(prev => prev.filter(u => u.id !== user.id));
+          }
+        } else {
+          console.error('Failed to record swipe:', result.error);
         }
       } catch (error) {
         console.error('Error recording swipe:', error);
@@ -254,35 +304,68 @@ export default function DiscoverPage() {
   };
 
   // Behandle Like-Antworten von Benachrichtigungen
-  const handleLikeResponse = (likeId: string, response: 'accept' | 'decline') => {
+  const handleLikeResponse = async (likeId: string, response: 'accept' | 'decline') => {
     const pendingLike = pendingLikes.find(like => like.id === likeId);
-    if (!pendingLike) return;
+    if (!pendingLike || !currentUserId) return;
 
-    if (response === 'accept') {
-      // Like erwidern - erstelle Match
-      const newLike: LikeData = {
-        fromUserId: currentUserId!,
-        toUserId: pendingLike.fromUser.id,
-        timestamp: new Date().toISOString(),
-        isMatch: true
-      };
+    try {
+      if (response === 'accept') {
+        // Like back through database
+        const result = await supabaseDatabaseService.recordSwipeAction(
+          currentUserId,
+          pendingLike.fromUser.id,
+          'like'
+        );
+        
+        if (result.success) {
+          const newLike: LikeData = {
+            fromUserId: currentUserId,
+            toUserId: pendingLike.fromUser.id,
+            timestamp: new Date().toISOString(),
+            isMatch: result.isMatch
+          };
+          
+          setSentLikes(prev => [...prev, newLike]);
+          
+          if (result.isMatch) {
+            setMatches(prev => [...prev, pendingLike.fromUser.id]);
+            console.log(`🎉 Match mit ${pendingLike.fromUser.name}!`);
+          }
+          
+          // Markiere das received Like als Match
+          setReceivedLikes(prev => prev.map(like => 
+            like.fromUserId === pendingLike.fromUser.id ? { ...like, isMatch: result.isMatch } : like
+          ));
+        } else {
+          console.error('Failed to like back:', result.error);
+          alert('Fehler beim Liken');
+          return; // Don't remove from pending if failed
+        }
+      } else {
+        // Decline through database
+        const result = await supabaseDatabaseService.recordSwipeAction(
+          currentUserId,
+          pendingLike.fromUser.id,
+          'pass'
+        );
+        
+        if (result.success) {
+          // Remove from receivedLikes
+          setReceivedLikes(prev => prev.filter(like => like.fromUserId !== pendingLike.fromUser.id));
+        } else {
+          console.error('Failed to decline:', result.error);
+          alert('Fehler beim Ablehnen');
+          return; // Don't remove from pending if failed
+        }
+      }
+
+      // Remove from pending list only if action was successful
+      setPendingLikes(prev => prev.filter(like => like.id !== likeId));
       
-      setSentLikes(prev => [...prev, newLike]);
-      setMatches(prev => [...prev, pendingLike.fromUser.id]);
-      
-      // Markiere das received Like als Match
-      setReceivedLikes(prev => prev.map(like => 
-        like.fromUserId === pendingLike.fromUser.id ? { ...like, isMatch: true } : like
-      ));
-      
-      console.log(`🎉 Match mit ${pendingLike.fromUser.name}!`);
-    } else {
-      // Bei decline, entferne auch aus receivedLikes
-      setReceivedLikes(prev => prev.filter(like => like.fromUserId !== pendingLike.fromUser.id));
+    } catch (error) {
+      console.error('Error handling like response:', error);
+      alert('Fehler bei der Antwort');
     }
-
-    // Entferne Like aus pending Liste
-    setPendingLikes(prev => prev.filter(like => like.id !== likeId));
   };
 
   // Prüfe ob User bereits geliked wurde
@@ -298,14 +381,24 @@ export default function DiscoverPage() {
   const handleLike = () => {
     console.log('Like button clicked!', currentUser?.name);
     if (currentUser && !isAnimating) {
-      handleSwipe('right', currentUser);
+      handleSwipe('right', currentUser, 'like');
     }
   };
 
   const handlePass = () => {
     console.log('Pass button clicked!', currentUser?.name);
     if (currentUser && !isAnimating) {
-      handleSwipe('left', currentUser);
+      handleSwipe('left', currentUser, 'pass');
+    }
+  };
+
+  const handleBlock = () => {
+    console.log('Block button clicked!', currentUser?.name);
+    if (currentUser && !isAnimating) {
+      // Confirm before blocking
+      if (window.confirm(`Are you sure you want to block ${currentUser.name}? This action cannot be undone.`)) {
+        handleSwipe('left', currentUser, 'block');
+      }
     }
   };
 
@@ -694,17 +787,30 @@ export default function DiscoverPage() {
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center space-x-2 ml-3 flex-shrink-0">
+                      <div className="flex items-center space-x-1 ml-3 flex-shrink-0">
                         <button
-                          onClick={() => handleSwipe('left', user)}
-                          className="w-8 h-8 bg-red-50 hover:bg-red-100 rounded-full flex items-center justify-center text-red-500 transition-colors"
+                          onClick={() => handleSwipe('left', user, 'pass')}
+                          className="w-7 h-7 bg-gray-50 hover:bg-gray-100 rounded-full flex items-center justify-center text-gray-500 transition-colors"
                           disabled={hasLikedUser(user.id)}
+                          title="Pass"
                         >
-                          <X className="w-4 h-4" />
+                          <X className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={() => handleSwipe('right', user)}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to block ${user.name}?`)) {
+                              handleSwipe('left', user, 'block');
+                            }
+                          }}
+                          className="w-7 h-7 bg-red-50 hover:bg-red-100 rounded-full flex items-center justify-center text-red-500 transition-colors"
+                          disabled={hasLikedUser(user.id)}
+                          title="Block"
+                        >
+                          <X className="w-3 h-3 font-bold" />
+                        </button>
+                        <button
+                          onClick={() => handleSwipe('right', user, 'like')}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
                             hasLikedUser(user.id)
                               ? 'bg-pink-500 text-white cursor-default'
                               : hasUserLikedUs(user.id)
@@ -712,8 +818,9 @@ export default function DiscoverPage() {
                               : 'bg-pink-50 hover:bg-pink-100 text-pink-500'
                           }`}
                           disabled={hasLikedUser(user.id)}
+                          title="Like"
                         >
-                          <Heart className={`w-4 h-4 ${hasLikedUser(user.id) ? 'fill-current' : ''}`} />
+                          <Heart className={`w-3 h-3 ${hasLikedUser(user.id) ? 'fill-current' : ''}`} />
                         </button>
                       </div>
                     </div>
@@ -834,18 +941,31 @@ export default function DiscoverPage() {
                 </div>
               </div>
 
-              {/* Action Buttons - Direct Like/Pass */}
+              {/* Action Buttons - Direct Like/Pass/Block */}
               <div className="absolute bottom-28 left-0 right-0 z-30 px-6">
-                <div className="flex justify-center items-center space-x-12">
+                <div className="flex justify-center items-center space-x-8">
                   {/* Pass Button */}
                   <motion.button
                     onClick={handlePass}
-                    className="w-20 h-20 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center shadow-xl"
+                    className="w-16 h-16 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center shadow-xl"
                     whileHover={{ scale: 1.1, backgroundColor: "rgba(255,255,255,0.3)" }}
                     whileTap={{ scale: 0.9 }}
                     disabled={!currentUser || isAnimating}
+                    title="Pass"
                   >
-                    <X className="w-10 h-10 text-white" />
+                    <X className="w-8 h-8 text-white" />
+                  </motion.button>
+
+                  {/* Block Button */}
+                  <motion.button
+                    onClick={handleBlock}
+                    className="w-14 h-14 bg-red-500/80 backdrop-blur-md border border-red-400/30 rounded-full flex items-center justify-center shadow-xl"
+                    whileHover={{ scale: 1.1, backgroundColor: "rgba(239, 68, 68, 0.9)" }}
+                    whileTap={{ scale: 0.9 }}
+                    disabled={!currentUser || isAnimating}
+                    title="Block"
+                  >
+                    <X className="w-6 h-6 text-white font-bold" style={{ strokeWidth: 3 }} />
                   </motion.button>
 
                   {/* Like Button */}
@@ -855,6 +975,7 @@ export default function DiscoverPage() {
                     whileHover={{ scale: 1.1, boxShadow: "0 0 30px rgba(236, 72, 153, 0.5)" }}
                     whileTap={{ scale: 0.9 }}
                     disabled={!currentUser || isAnimating}
+                    title="Like"
                   >
                     <Heart className="w-10 h-10 text-white fill-current" />
                   </motion.button>
@@ -921,18 +1042,25 @@ export default function DiscoverPage() {
       {viewMode === 'swipe' && (
         <div className="fixed bottom-4 left-4 bg-white/95 backdrop-blur-sm rounded-lg p-2 shadow-sm border border-gray-200">
           <div className="flex items-center space-x-3 text-xs">
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1" title="Sent Likes">
               <Heart className="w-3 h-3 text-pink-500 fill-current" />
               <span className="text-gray-600">{sentLikes.length}</span>
             </div>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1" title="Received Likes">
               <Bell className="w-3 h-3 text-yellow-500" />
               <span className="text-gray-600">{pendingLikes.length}</span>
             </div>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1" title="Active Matches">
               <Sparkles className="w-3 h-3 text-purple-500" />
-              <span className="text-gray-600">{matches.length}</span>
+              <span className="text-gray-600">{matches.filter(m => users.find(u => u.id === m)).length}</span>
             </div>
+            <button
+              onClick={() => window.location.href = '/likes'}
+              className="flex items-center space-x-1 hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
+              title="View Likes Page"
+            >
+              <ArrowRight className="w-3 h-3 text-gray-400" />
+            </button>
           </div>
         </div>
       )}

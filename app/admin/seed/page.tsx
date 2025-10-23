@@ -1,8 +1,5 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { seedTestData } from '@/scripts/seed-data';

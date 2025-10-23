@@ -1,8 +1,16 @@
-import { supabase, isSupabaseAvailable, withSupabase } from '@/lib/auth/supabase-client';
+import { createClient } from '@supabase/supabase-js';
 import { normalizePhoneNumber } from '@/lib/utils/phone';
 
-// Re-export supabase for backward compatibility
-export { supabase };
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 export interface AuthResponse {
   success: boolean;
@@ -68,14 +76,6 @@ export class SupabaseAuth {
    */
   async verifyOTP(phoneNumber: string, code: string): Promise<AuthResponse> {
     try {
-      if (!isSupabaseAvailable()) {
-        return {
-          success: false,
-          message: 'Service nicht verfügbar',
-          error: 'Supabase not available'
-        };
-      }
-
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
       
       // Demo verification - accept code 123456
@@ -92,27 +92,15 @@ export class SupabaseAuth {
       const dummyEmail = `user_${normalizedPhone.replace(/[^0-9]/g, '')}@demo.hotspot.com`;
       const dummyPassword = `temp_${Date.now()}`;
 
-      const result = await withSupabase(async (client) => {
-        return await client.auth.signUp({
-          email: dummyEmail,
-          password: dummyPassword,
-          options: {
-            data: {
-              phone: normalizedPhone
-            }
+      const { data, error } = await supabase.auth.signUp({
+        email: dummyEmail,
+        password: dummyPassword,
+        options: {
+          data: {
+            phone: normalizedPhone
           }
-        });
+        }
       });
-
-      if (!result) {
-        return {
-          success: false,
-          message: 'Service nicht verfügbar',
-          error: 'Supabase operation failed'
-        };
-      }
-
-      const { data, error } = result;
 
       if (error) {
         console.error('Demo signup error:', error);
@@ -381,7 +369,7 @@ export class SupabaseAuth {
   }
 
   /**
-   * Sign up with email and password
+   * Sign up with email and password (without auto-creating profile)
    */
   async signUpWithEmail(email: string, password: string, name: string): Promise<AuthResponse> {
     try {
@@ -391,7 +379,8 @@ export class SupabaseAuth {
         options: {
           data: {
             name
-          }
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
@@ -399,35 +388,16 @@ export class SupabaseAuth {
         return {
           success: false,
           message: error.message,
-          error: error.message
+          error: error.message,
+          userId: undefined
         };
       }
 
-      // Create user profile
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            email: data.user.email,
-            name: name,
-            age: 25, // Default, user can update
-            gender: 'other', // Default, user must update
-            bio: '',
-            photos: [],
-            phone: '', // Will be filled later if needed
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-
-        if (profileError && profileError.code !== '23505') {
-          console.error('Profile creation error:', profileError);
-        }
-      }
-
+      // Return user ID for profile creation
       return {
         success: true,
-        message: 'Registrierung erfolgreich! Bitte überprüfe deine E-Mails.'
+        message: 'Registrierung erfolgreich!',
+        userId: data.user?.id
       };
     } catch (error: any) {
       return {
@@ -477,11 +447,16 @@ export class SupabaseAuth {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
         }
       });
 
       if (error) {
+        console.error('Google OAuth error:', error);
         return {
           success: false,
           message: 'Fehler bei der Google-Anmeldung',
@@ -489,17 +464,26 @@ export class SupabaseAuth {
         };
       }
 
+      // OAuth redirect will happen automatically
       return {
         success: true,
         message: 'Weiterleitung zu Google...'
       };
     } catch (error: any) {
+      console.error('Google OAuth unexpected error:', error);
       return {
         success: false,
         message: 'Fehler bei der Google-Anmeldung',
         error: error.message
       };
     }
+  }
+
+  /**
+   * Sign up with Google (same as sign in for OAuth)
+   */
+  async signUpWithGoogle(): Promise<AuthResponse> {
+    return this.signInWithGoogle();
   }
 }
 

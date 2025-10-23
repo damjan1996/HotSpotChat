@@ -1,12 +1,9 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { motion } from 'framer-motion';
-import { MessageCircle, Search, Phone, Video, MoreVertical, Send, ArrowLeft, Heart, Users, Crown, Settings } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageCircle, Search, Phone, Video, MoreVertical, Send, ArrowLeft, Heart, Users, Crown, Settings, X, Bell, LogOut, Shield, HelpCircle, Camera, Edit3, Menu, User, Sparkles, Grid } from 'lucide-react';
 import { BottomNavigation } from '@/components/navigation/BottomNavigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -16,6 +13,7 @@ import { useRouter } from 'next/navigation';
 
 interface Chat {
   id: string;
+  matchId: string;
   name: string;
   avatar: string;
   lastMessage: string;
@@ -23,6 +21,7 @@ interface Chat {
   unread: number;
   isOnline: boolean;
   isMatch?: boolean;
+  otherUserId: string;
 }
 
 interface Message {
@@ -49,6 +48,8 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(12);
   
   const currentUserId = user?.id || null;
 
@@ -59,42 +60,59 @@ export default function ChatPage() {
       setIsLoading(true);
       
       try {
-        // Load matches
+        // Load matches (for new matches section)
         const matchesResult = await supabaseDatabaseService.getUserMatches(currentUserId);
         if (matchesResult.success && matchesResult.matches) {
-          const matchesData: Match[] = matchesResult.matches.map(match => ({
-            id: match.id,
-            user: match.otherUser,
-            matchedAt: match.matched_at,
-            hasNewMessage: Math.random() > 0.7 // Mock new message indicator
-          }));
-          setMatches(matchesData);
+          // Filter matches that don't have conversations yet
+          const conversationsResult = await supabaseDatabaseService.getChatConversations(currentUserId);
+          const conversationMatchIds = conversationsResult.conversations?.map(c => c.matchId) || [];
+          
+          const newMatches: Match[] = matchesResult.matches
+            .filter(match => !conversationMatchIds.includes(match.id))
+            .map(match => ({
+              id: match.id,
+              user: match.otherUser,
+              matchedAt: match.matched_at,
+              hasNewMessage: false
+            }));
+          setMatches(newMatches);
         }
 
-        // Mock chat data for now
-        const mockChats: Chat[] = [
-          {
-            id: '1',
-            name: 'Ana',
-            avatar: 'https://images.unsplash.com/photo-1494790108755-2616c0763c5e?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'Hey, how are you? 😊',
-            timestamp: '2 min',
-            unread: 2,
-            isOnline: true,
-            isMatch: true
-          },
-          {
-            id: '2',
-            name: 'Marko',
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'See you at the club tonight!',
-            timestamp: '1h',
-            unread: 0,
-            isOnline: false,
-            isMatch: true
-          }
-        ];
-        setChats(mockChats);
+        // Load conversations (matches with messages)
+        const conversationsResult = await supabaseDatabaseService.getChatConversations(currentUserId);
+        if (conversationsResult.success && conversationsResult.conversations) {
+          const chatsData: Chat[] = conversationsResult.conversations.map(conversation => {
+            const otherUser = conversation.otherUser;
+            const lastMessage = conversation.lastMessage;
+            
+            // Format timestamp
+            let timestamp = 'now';
+            if (lastMessage?.sent_at) {
+              const messageTime = new Date(lastMessage.sent_at);
+              const now = new Date();
+              const diffMinutes = Math.floor((now.getTime() - messageTime.getTime()) / (1000 * 60));
+              
+              if (diffMinutes < 1) timestamp = 'now';
+              else if (diffMinutes < 60) timestamp = `${diffMinutes}m`;
+              else if (diffMinutes < 1440) timestamp = `${Math.floor(diffMinutes / 60)}h`;
+              else timestamp = `${Math.floor(diffMinutes / 1440)}d`;
+            }
+            
+            return {
+              id: conversation.id,
+              matchId: conversation.matchId,
+              name: otherUser?.name || 'Unknown',
+              avatar: otherUser?.photos?.[0] || '/placeholder-avatar.jpg',
+              lastMessage: lastMessage?.text || 'You matched! Say hello 👋',
+              timestamp: timestamp,
+              unread: conversation.unreadCount,
+              isOnline: otherUser?.is_online || false,
+              isMatch: true,
+              otherUserId: otherUser?.id || ''
+            };
+          });
+          setChats(chatsData);
+        }
         
       } catch (error) {
         console.error('Error loading chat data:', error);
@@ -106,42 +124,90 @@ export default function ChatPage() {
     loadData();
   }, [currentUserId, loading]);
 
-  const mockMessages: Message[] = [
-    { id: '1', text: 'Hey! How are you?', sender: 'other', timestamp: '10:30' },
-    { id: '2', text: 'Hi! I\'m good, thanks! How about you?', sender: 'user', timestamp: '10:32' },
-    { id: '3', text: 'Great! Want to grab a drink later?', sender: 'other', timestamp: '10:35' },
-    { id: '4', text: 'Sure! What time works for you?', sender: 'user', timestamp: '10:37' },
-    { id: '5', text: 'How about 8 PM at Club Olimp?', sender: 'other', timestamp: '10:40' },
-  ];
 
   const filteredChats = chats.filter(chat =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSendMessage = () => {
-    if (!newMessage.trim() || !selectedChat) return;
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedChat || !currentUserId) return;
 
-    const message: Message = {
-      id: Date.now().toString(),
-      text: newMessage,
+    const messageText = newMessage;
+    setNewMessage(''); // Clear input immediately for better UX
+
+    // Optimistically add message to UI
+    const tempMessage: Message = {
+      id: `temp-${Date.now()}`,
+      text: messageText,
       sender: 'user',
       timestamp: new Date().toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })
     };
+    setMessages(prev => [...prev, tempMessage]);
 
-    setMessages(prev => [...prev, message]);
-    setNewMessage('');
+    try {
+      // Send message to database
+      const sendResult = await supabaseDatabaseService.sendMessage(
+        selectedChat.matchId,
+        currentUserId,
+        selectedChat.otherUserId,
+        messageText
+      );
 
-    // Update last message in chat list
-    setChats(prev => prev.map(chat => 
-      chat.id === selectedChat.id 
-        ? { ...chat, lastMessage: newMessage, timestamp: 'now' }
-        : chat
-    ));
+      if (sendResult.success && sendResult.message) {
+        // Replace temp message with real message
+        const realMessage: Message = {
+          id: sendResult.message.id,
+          text: sendResult.message.text,
+          sender: 'user',
+          timestamp: new Date(sendResult.message.sent_at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })
+        };
+        
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempMessage.id ? realMessage : msg
+        ));
+
+        // Update last message in chat list
+        setChats(prev => prev.map(chat => 
+          chat.id === selectedChat.id 
+            ? { ...chat, lastMessage: messageText, timestamp: 'now' }
+            : chat
+        ));
+      } else {
+        // Remove temp message on error
+        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+        console.error('Failed to send message:', sendResult.error);
+        alert('Fehler beim Senden der Nachricht');
+      }
+    } catch (error) {
+      // Remove temp message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+      console.error('Error sending message:', error);
+      alert('Fehler beim Senden der Nachricht');
+    }
   };
 
-  const openChat = (chat: Chat) => {
+  const openChat = async (chat: Chat) => {
     setSelectedChat(chat);
-    setMessages(mockMessages);
+    
+    // Load real messages from database
+    try {
+      const messagesResult = await supabaseDatabaseService.getMatchMessages(chat.matchId);
+      if (messagesResult.success && messagesResult.messages) {
+        const formattedMessages: Message[] = messagesResult.messages.map(msg => ({
+          id: msg.id,
+          text: msg.text,
+          sender: msg.sender_id === currentUserId ? 'user' : 'other',
+          timestamp: new Date(msg.sent_at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })
+        }));
+        setMessages(formattedMessages);
+      } else {
+        // No messages yet, show empty array
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      setMessages([]);
+    }
     
     // Mark as read
     setChats(prev => prev.map(c => 
@@ -152,13 +218,15 @@ export default function ChatPage() {
   const startChatWithMatch = (match: Match) => {
     const newChat: Chat = {
       id: `match-${match.id}`,
+      matchId: match.id,
       name: match.user.name,
       avatar: match.user.photos?.[0] || '/placeholder-avatar.jpg',
       lastMessage: 'You matched! Say hello 👋',
       timestamp: 'now',
       unread: 0,
       isOnline: match.user.is_online,
-      isMatch: true
+      isMatch: true,
+      otherUserId: match.user.id
     };
     
     setSelectedChat(newChat);
@@ -285,8 +353,8 @@ export default function ChatPage() {
   return (
     <div className="h-screen bg-white relative overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-gray-100 px-4 py-4">
-        <div className="flex items-center justify-between">
+      <header className="absolute top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-4">
           {/* Left: HotSpot Chat Logo */}
           <div className="flex items-center space-x-3">
             <img 
@@ -302,14 +370,13 @@ export default function ChatPage() {
           
           {/* Center: Club Info */}
           <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
-            <div className="text-gray-800 font-bold text-lg" style={{ fontFamily: 'cursive' }}>
-              Club Olimp
-            </div>
+            <div className="text-gray-800 font-semibold text-sm">Club Olimp</div>
+            <div className="text-gray-500 text-xs">{onlineCount} online</div>
           </div>
           
           {/* Right: Settings */}
           <button 
-            onClick={() => router.push('/settings')}
+            onClick={() => setShowSettingsSidebar(!showSettingsSidebar)}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <Settings className="w-5 h-5 text-gray-600" />
@@ -317,8 +384,183 @@ export default function ChatPage() {
         </div>
       </header>
 
+      {/* Settings Sidebar */}
+      <AnimatePresence>
+        {showSettingsSidebar && (
+          <>
+            {/* Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+              onClick={() => setShowSettingsSidebar(false)}
+            />
+            
+            {/* Sidebar */}
+            <motion.div
+              initial={{ x: 320 }}
+              animate={{ x: 0 }}
+              exit={{ x: 320 }}
+              transition={{ 
+                type: "spring", 
+                stiffness: 300, 
+                damping: 30,
+                duration: 0.3
+              }}
+              className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 border-l border-gray-200"
+            >
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Podešavanja</h2>
+                <button
+                  onClick={() => setShowSettingsSidebar(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-2">
+                {/* Navigation Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Navigacija</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/discover';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Sparkles className="w-5 h-5 text-pink-500 mr-3" />
+                    <span className="text-gray-900">Discovery</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <User className="w-5 h-5 text-blue-500 mr-3" />
+                    <span className="text-gray-900">Moj profil</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/chat';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5 text-green-500 mr-3" />
+                    <span className="text-gray-900">Razgovori</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/dashboard';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Grid className="w-5 h-5 text-purple-500 mr-3" />
+                    <span className="text-gray-900">Dashboard</span>
+                  </button>
+                </div>
+
+                {/* Profile Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Profil</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile/edit';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Edit3 className="w-5 h-5 text-orange-500 mr-3" />
+                    <span className="text-gray-900">Uredi profil</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/profile/photos';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Camera className="w-5 h-5 text-cyan-500 mr-3" />
+                    <span className="text-gray-900">Moje fotografije</span>
+                  </button>
+                </div>
+
+                {/* Settings Section */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Podešavanja</h3>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/settings/privacy';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Shield className="w-5 h-5 text-indigo-500 mr-3" />
+                    <span className="text-gray-900">Privatnost i bezbednost</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/settings/notifications';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Bell className="w-5 h-5 text-yellow-500 mr-3" />
+                    <span className="text-gray-900">Obaveštenja</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      window.location.href = '/help';
+                      setShowSettingsSidebar(false);
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <HelpCircle className="w-5 h-5 text-teal-500 mr-3" />
+                    <span className="text-gray-900">Pomoć i podrška</span>
+                  </button>
+                </div>
+
+                {/* Logout Section */}
+                <div className="pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem('authenticated');
+                      window.location.href = '/login';
+                    }}
+                    className="w-full flex items-center px-3 py-2 text-left hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <LogOut className="w-5 h-5 text-red-500 mr-3" />
+                    <span className="text-red-600">Odjavi se</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-20">
+      <div className="flex-1 overflow-y-auto pb-20 pt-16">
         {/* Matches Section */}
         {matches.length > 0 && (
           <div className="p-4 border-b border-gray-100">

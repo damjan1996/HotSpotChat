@@ -1,8 +1,5 @@
 'use client';
 
-// Force dynamic rendering to prevent build-time errors
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, User, Edit, Save, X, Plus, Trash2, Loader2 } from 'lucide-react';

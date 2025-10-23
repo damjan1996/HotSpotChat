@@ -52,10 +52,6 @@ export function PhotoUpload({
       // Direct upload attempt (skip bucket checking for now)
       const { supabase } = await import('@/lib/auth/supabase-auth');
       
-      if (!supabase) {
-        throw new Error('Supabase client not available');
-      }
-      
       // Generate unique filename
       const timestamp = Date.now();
       const fileExt = file.name.split('.').pop();
