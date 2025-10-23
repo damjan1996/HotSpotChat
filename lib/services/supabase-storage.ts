@@ -66,6 +66,14 @@ export class SupabaseStorageService {
         });
 
       if (error) {
+        console.error('Storage upload error:', {
+          message: error.message,
+          statusCode: error.statusCode,
+          error: error,
+          filePath: filePath,
+          fileSize: file.size,
+          fileType: file.type
+        });
         throw error;
       }
 
