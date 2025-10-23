@@ -27,7 +27,11 @@
       "Bash(pnpm build:*)",
       "Bash(npx next:*)",
       "Bash(npx tsc:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(magick:*)",
+      "Bash(where convert)",
+      "Bash(where inkscape)",
+      "Bash(where npm)"
     ],
     "deny": []
   }
