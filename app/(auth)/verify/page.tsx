@@ -108,7 +108,7 @@ export default function VerifyPage() {
         name: registrationData.name,
         phone: registrationData.phone,
         age: registrationData.age,
-        gender: registrationData.gender,
+        gender: registrationData.gender as 'male' | 'female' | 'other',
         bio: registrationData.bio || '',
         photos: registrationData.photos || [],
         is_online: true,
